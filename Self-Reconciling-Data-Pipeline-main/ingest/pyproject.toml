@@ -1,0 +1,22 @@
+[project]
+name = "reconcile-ingest"
+version = "0.1.0"
+description = "Ingest with same-snapshot control totals, immutable archive and idempotent raw loads"
+requires-python = ">=3.10"
+dependencies = [
+  "psycopg[binary]>=3.2",
+  "pyarrow>=16",
+  "google-cloud-bigquery>=3.25",
+  "google-cloud-storage>=2.18",
+  "google-cloud-pubsub>=2.23",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "reconcile-datagen"]
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["reconcile_ingest"]

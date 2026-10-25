@@ -1,0 +1,35 @@
+# secrets and local config
+.env
+.env.*
+!.env.example
+infra/terraform.tfvars
+*.json.key
+
+# terraform
+infra/.terraform/
+infra/.terraform.lock.hcl.bak
+*.tfstate
+*.tfstate.*
+*.tfplan
+
+# python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# dbt
+dbt/reconcile/target/
+dbt/reconcile/dbt_packages/
+dbt/reconcile/logs/
+logs/
+
+# web
+web/node_modules/
+web/dist/
+web/*.tsbuildinfo
+
+# os
+.DS_Store

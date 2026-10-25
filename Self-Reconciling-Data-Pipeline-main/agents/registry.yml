@@ -1,0 +1,25 @@
+# Agent registry: every agent, model and prompt version is pinned here and recorded with each call.
+# Agents are advisory only: they read masked views and propose catalog actions; the engine decides.
+# Phase 0 status: OFF. policy.yml agents.enabled stays false until residency and BAA coverage are
+# confirmed in writing (see docs/RUNBOOK.md, "AI residency check").
+
+agents:
+  - id: diagnosis
+    version: "0.1.0"
+    phase: 5
+    model: gemini-2.5-pro            # set to the model your region and agreement cover
+    prompt_version: diag-v1
+    token_budget: 16000
+    timeout_seconds: 20
+    reads: [incident_context_bundle, masked_views]
+    may_propose: [reextract_from_raw, rebuild_partition, link_unknown_member, wait_and_recheck, escalate]
+
+  - id: communication
+    version: "0.1.0"
+    phase: 5
+    model: gemini-2.5-flash
+    prompt_version: comms-v1
+    token_budget: 4000
+    timeout_seconds: 10
+    reads: [incident_record]
+    may_propose: []                  # writes messages only: counts and evidence references, never identifiers

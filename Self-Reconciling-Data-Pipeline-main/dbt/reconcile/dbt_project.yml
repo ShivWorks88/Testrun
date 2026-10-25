@@ -1,0 +1,39 @@
+name: reconcile
+version: "0.1.0"
+config-version: 2
+profile: reconcile
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+target-path: "target"
+clean-targets: ["target", "dbt_packages"]
+
+# Phase 2: staging (incremental insert_overwrite, row_number() dedupe, 3-day lookback,
+# full_refresh: false), marts and reconciliation tests, all built in `audit`.
+# Value-level reconciliation (models/value_recon) runs as sa-valuerecon and writes evidence_restricted.
+# Every test carries meta.policy_outcome (default: blocking); the Phase 3 gate reads it.
+
+vars:
+  business_date: null          # set by the orchestrator: --vars '{business_date: 2026-10-13}'
+  lookback_days: 3
+  facility_tz: "Asia/Kolkata"
+  enforce_test_count: true     # T7: a skipped test fails the run
+  inject_value_truncation: false   # T6 injector, test project only
+
+on-run-end:
+  - "{{ assert_expected_tests(results) }}"
+
+models:
+  reconcile:
+    +schema: audit             # every model lives in audit, whichever connection runs it
+    +persist_docs: { relation: true, columns: true }
+    +labels: { app: reconcile-poc }
+    # models/value_recon overrides this with schema='evidence_restricted' in its own config
+
+data_tests:
+  reconcile:
+    +store_failures: false
+    +meta:
+      policy_outcome: blocking

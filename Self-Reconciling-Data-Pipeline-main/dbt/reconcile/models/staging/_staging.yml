@@ -1,0 +1,84 @@
+version: 2
+
+models:
+  - name: stg_encounters
+    description: "EHR encounters, one row per encounter per business date. Built in audit."
+    data_tests:
+      - reconcile_to_control_totals:
+          arguments:
+            dataset: encounters
+            key_column: encounter_id
+          config:
+            meta: {policy_outcome: blocking}
+      - control_totals_present:
+          arguments:
+            dataset: encounters
+          config:
+            meta: {policy_outcome: blocking}
+    columns:
+      - name: encounter_id
+        data_tests:
+          - not_null:
+              config: {meta: {policy_outcome: blocking}}
+          - unique:
+              config: {meta: {policy_outcome: blocking}}
+      - name: business_date
+        data_tests:
+          - not_null:
+              config: {meta: {policy_outcome: blocking}}
+
+  - name: stg_claims
+    description: "Billing claims, one row per claim per business date. Built in audit."
+    data_tests:
+      - reconcile_to_control_totals:
+          arguments:
+            dataset: claims
+            key_column: claim_id
+            amount_column: claim_amount
+          config:
+            meta: {policy_outcome: blocking}
+      - control_totals_present:
+          arguments:
+            dataset: claims
+          config:
+            meta: {policy_outcome: blocking}
+    columns:
+      - name: claim_id
+        data_tests:
+          - not_null:
+              config: {meta: {policy_outcome: blocking}}
+          - unique:
+              config: {meta: {policy_outcome: blocking}}
+      - name: business_date
+        data_tests:
+          - not_null:
+              config: {meta: {policy_outcome: blocking}}
+
+  - name: stg_lab_results
+    description: "Lab results, one row per result per business date. Built in audit."
+    data_tests:
+      - reconcile_to_control_totals:
+          arguments:
+            dataset: lab_results
+            key_column: lab_result_id
+            # If ops.control_totals shows amount_column = result_value for lab_results,
+            # add the next line (remove the #):
+            # amount_column: result_value
+          config:
+            meta: {policy_outcome: blocking}
+      - control_totals_present:
+          arguments:
+            dataset: lab_results
+          config:
+            meta: {policy_outcome: blocking}
+    columns:
+      - name: lab_result_id
+        data_tests:
+          - not_null:
+              config: {meta: {policy_outcome: blocking}}
+          - unique:
+              config: {meta: {policy_outcome: blocking}}
+      - name: business_date
+        data_tests:
+          - not_null:
+              config: {meta: {policy_outcome: blocking}}

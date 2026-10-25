@@ -1,0 +1,1861 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Reconcile console API",
+    "description": "Self-Reconciling Data Pipeline POC: Phases 0\u20134",
+    "version": "0.2.0"
+  },
+  "paths": {
+    "/api/health": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Health",
+        "description": "Liveness plus dependency checks. Used by the Phase 0 exit gate (API health green).",
+        "operationId": "health_api_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Me",
+        "operationId": "me_api_me_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Me Api Me Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/environment": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Get Environment",
+        "operationId": "get_environment_api_environment_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Environment"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sources": {
+      "get": {
+        "tags": [
+          "ingestion"
+        ],
+        "summary": "Sources",
+        "operationId": "sources_api_sources_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SourceHealth"
+                  },
+                  "type": "array",
+                  "title": "Response Sources Api Sources Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/batches": {
+      "get": {
+        "tags": [
+          "ingestion"
+        ],
+        "summary": "Batches",
+        "operationId": "batches_api_batches_get",
+        "parameters": [
+          {
+            "name": "date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Batches"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/batches/{dataset}/replay": {
+      "post": {
+        "tags": [
+          "ingestion"
+        ],
+        "summary": "Request Replay",
+        "operationId": "request_replay_api_batches__dataset__replay_post",
+        "parameters": [
+          {
+            "name": "dataset",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Dataset"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplayRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReplayAccepted"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/reconciliation": {
+      "get": {
+        "tags": [
+          "recovery"
+        ],
+        "summary": "Reconciliation",
+        "operationId": "reconciliation_api_reconciliation_get",
+        "parameters": [
+          {
+            "name": "date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Reconciliation"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/publication": {
+      "get": {
+        "tags": [
+          "recovery"
+        ],
+        "summary": "Publication",
+        "operationId": "publication_api_publication_get",
+        "parameters": [
+          {
+            "name": "dates",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 60,
+              "minimum": 1,
+              "default": 14,
+              "title": "Dates"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Publication"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/incidents": {
+      "get": {
+        "tags": [
+          "recovery"
+        ],
+        "summary": "Incidents",
+        "operationId": "incidents_api_incidents_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/IncidentSummary"
+                  },
+                  "type": "array",
+                  "title": "Response Incidents Api Incidents Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/incidents/{incident_id}": {
+      "get": {
+        "tags": [
+          "recovery"
+        ],
+        "summary": "Incident",
+        "operationId": "incident_api_incidents__incident_id__get",
+        "parameters": [
+          {
+            "name": "incident_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Incident Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IncidentDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Batch": {
+        "properties": {
+          "batch_id": {
+            "type": "string",
+            "title": "Batch Id"
+          },
+          "dataset": {
+            "type": "string",
+            "title": "Dataset"
+          },
+          "source_system": {
+            "type": "string",
+            "title": "Source System"
+          },
+          "business_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Business Date"
+          },
+          "mode": {
+            "type": "string",
+            "title": "Mode"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "rows_extracted": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rows Extracted"
+          },
+          "rows_loaded": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rows Loaded"
+          },
+          "control_total_rows": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Control Total Rows",
+            "description": "row_count from the control-totals row"
+          },
+          "distinct_keys": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Distinct Keys"
+          },
+          "amount_total": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Total"
+          },
+          "totals_rows": {
+            "type": "integer",
+            "title": "Totals Rows",
+            "description": "How many control-totals rows exist for this batch (must be 1)"
+          },
+          "archive_uri": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Archive Uri"
+          },
+          "injections": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Injections"
+          },
+          "finished_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Finished At"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "batch_id",
+          "dataset",
+          "source_system",
+          "business_date",
+          "mode",
+          "status",
+          "rows_extracted",
+          "rows_loaded",
+          "control_total_rows",
+          "distinct_keys",
+          "amount_total",
+          "totals_rows",
+          "archive_uri",
+          "injections",
+          "finished_at",
+          "error"
+        ],
+        "title": "Batch"
+      },
+      "Batches": {
+        "properties": {
+          "business_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Business Date"
+          },
+          "batches": {
+            "items": {
+              "$ref": "#/components/schemas/Batch"
+            },
+            "type": "array",
+            "title": "Batches"
+          },
+          "available_dates": {
+            "items": {
+              "type": "string",
+              "format": "date"
+            },
+            "type": "array",
+            "title": "Available Dates"
+          }
+        },
+        "type": "object",
+        "required": [
+          "business_date",
+          "batches",
+          "available_dates"
+        ],
+        "title": "Batches"
+      },
+      "CheckResult": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok"
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ok",
+          "detail"
+        ],
+        "title": "CheckResult"
+      },
+      "Environment": {
+        "properties": {
+          "project": {
+            "type": "string",
+            "title": "Project"
+          },
+          "region": {
+            "type": "string",
+            "title": "Region"
+          },
+          "runs_as": {
+            "type": "string",
+            "title": "Runs As"
+          },
+          "resources": {
+            "items": {
+              "$ref": "#/components/schemas/Resource"
+            },
+            "type": "array",
+            "title": "Resources"
+          },
+          "identity_columns": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Identity Columns"
+          },
+          "identities": {
+            "items": {
+              "$ref": "#/components/schemas/IdentityRow"
+            },
+            "type": "array",
+            "title": "Identities"
+          },
+          "synthetic": {
+            "items": {
+              "$ref": "#/components/schemas/SyntheticRow"
+            },
+            "type": "array",
+            "title": "Synthetic"
+          },
+          "policy": {
+            "$ref": "#/components/schemas/PolicyInfo"
+          },
+          "build": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Build"
+          }
+        },
+        "type": "object",
+        "required": [
+          "project",
+          "region",
+          "runs_as",
+          "resources",
+          "identity_columns",
+          "identities",
+          "synthetic",
+          "policy",
+          "build"
+        ],
+        "title": "Environment"
+      },
+      "Gate": {
+        "properties": {
+          "gate": {
+            "type": "integer",
+            "title": "Gate"
+          },
+          "question": {
+            "type": "string",
+            "title": "Question"
+          },
+          "answer": {
+            "type": "string",
+            "title": "Answer"
+          },
+          "pass": {
+            "type": "boolean",
+            "title": "Pass"
+          }
+        },
+        "type": "object",
+        "required": [
+          "gate",
+          "question",
+          "answer",
+          "pass"
+        ],
+        "title": "Gate"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "Health": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "degraded"
+            ],
+            "title": "Status"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "checks": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/CheckResult"
+            },
+            "type": "object",
+            "title": "Checks"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "version",
+          "checks"
+        ],
+        "title": "Health"
+      },
+      "IdentityRow": {
+        "properties": {
+          "component": {
+            "type": "string",
+            "title": "Component"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "access": {
+            "additionalProperties": {
+              "type": "string",
+              "enum": [
+                "Write",
+                "Read",
+                "Masked",
+                "\u2014"
+              ]
+            },
+            "type": "object",
+            "title": "Access"
+          }
+        },
+        "type": "object",
+        "required": [
+          "component",
+          "email",
+          "access"
+        ],
+        "title": "IdentityRow"
+      },
+      "IncidentDetail": {
+        "properties": {
+          "summary": {
+            "$ref": "#/components/schemas/IncidentSummary"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/IncidentEvent"
+            },
+            "type": "array",
+            "title": "Events"
+          }
+        },
+        "type": "object",
+        "required": [
+          "summary",
+          "events"
+        ],
+        "title": "IncidentDetail"
+      },
+      "IncidentEvent": {
+        "properties": {
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "At"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "attempt": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attempt"
+          },
+          "action": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Action"
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mode"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "evidence": {
+            "title": "Evidence"
+          },
+          "gates": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/Gate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gates"
+          },
+          "gate_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gate Run Id"
+          },
+          "rule_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rule Id"
+          },
+          "severity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Severity"
+          },
+          "route": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Route"
+          },
+          "policy_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Policy Version"
+          }
+        },
+        "type": "object",
+        "required": [
+          "at",
+          "status",
+          "attempt",
+          "action",
+          "mode",
+          "note"
+        ],
+        "title": "IncidentEvent"
+      },
+      "IncidentSummary": {
+        "properties": {
+          "incident_id": {
+            "type": "string",
+            "title": "Incident Id"
+          },
+          "business_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Business Date"
+          },
+          "dataset": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dataset"
+          },
+          "failure_type": {
+            "type": "string",
+            "title": "Failure Type"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "attempt": {
+            "type": "integer",
+            "title": "Attempt"
+          },
+          "action": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Action"
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mode"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "opened_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Opened At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "minutes_open": {
+            "type": "number",
+            "title": "Minutes Open"
+          },
+          "events": {
+            "type": "integer",
+            "title": "Events"
+          },
+          "severity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Severity"
+          },
+          "rule_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rule Id"
+          },
+          "policy_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Policy Version"
+          }
+        },
+        "type": "object",
+        "required": [
+          "incident_id",
+          "business_date",
+          "dataset",
+          "failure_type",
+          "status",
+          "attempt",
+          "action",
+          "mode",
+          "note",
+          "opened_at",
+          "updated_at",
+          "minutes_open",
+          "events"
+        ],
+        "title": "IncidentSummary"
+      },
+      "PolicyInfo": {
+        "properties": {
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "kill_switch": {
+            "type": "boolean",
+            "title": "Kill Switch"
+          },
+          "agents_enabled": {
+            "type": "boolean",
+            "title": "Agents Enabled"
+          },
+          "residency_confirmed": {
+            "type": "boolean",
+            "title": "Residency Confirmed"
+          },
+          "actions": {
+            "type": "integer",
+            "title": "Actions"
+          },
+          "rules": {
+            "type": "integer",
+            "title": "Rules"
+          }
+        },
+        "type": "object",
+        "required": [
+          "version",
+          "kill_switch",
+          "agents_enabled",
+          "residency_confirmed",
+          "actions",
+          "rules"
+        ],
+        "title": "PolicyInfo"
+      },
+      "Publication": {
+        "properties": {
+          "dates": {
+            "items": {
+              "type": "string",
+              "format": "date"
+            },
+            "type": "array",
+            "title": "Dates"
+          },
+          "datasets": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Datasets"
+          },
+          "cells": {
+            "items": {
+              "$ref": "#/components/schemas/PublicationCell"
+            },
+            "type": "array",
+            "title": "Cells"
+          },
+          "log": {
+            "items": {
+              "$ref": "#/components/schemas/PublicationEvent"
+            },
+            "type": "array",
+            "title": "Log"
+          },
+          "last_verified": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "object",
+            "title": "Last Verified"
+          }
+        },
+        "type": "object",
+        "required": [
+          "dates",
+          "datasets",
+          "cells",
+          "log",
+          "last_verified"
+        ],
+        "title": "Publication"
+      },
+      "PublicationCell": {
+        "properties": {
+          "dataset": {
+            "type": "string",
+            "title": "Dataset"
+          },
+          "business_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Business Date"
+          },
+          "state": {
+            "type": "string",
+            "title": "State"
+          },
+          "reasons": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reasons"
+          },
+          "decided_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Decided At"
+          },
+          "snapshot": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snapshot"
+          }
+        },
+        "type": "object",
+        "required": [
+          "dataset",
+          "business_date",
+          "state",
+          "reasons",
+          "decided_at"
+        ],
+        "title": "PublicationCell"
+      },
+      "PublicationEvent": {
+        "properties": {
+          "dataset": {
+            "type": "string",
+            "title": "Dataset"
+          },
+          "business_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Business Date"
+          },
+          "state": {
+            "type": "string",
+            "title": "State"
+          },
+          "reasons": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reasons"
+          },
+          "decided_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Decided At"
+          },
+          "snapshot": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snapshot"
+          },
+          "gate_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gate Run Id"
+          },
+          "actor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor"
+          }
+        },
+        "type": "object",
+        "required": [
+          "dataset",
+          "business_date",
+          "state",
+          "reasons",
+          "decided_at"
+        ],
+        "title": "PublicationEvent"
+      },
+      "ReconCheck": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "resource_type": {
+            "type": "string",
+            "title": "Resource Type"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "failures": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failures"
+          },
+          "policy_outcome": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Policy Outcome"
+          },
+          "attached_to": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attached To"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "resource_type",
+          "status"
+        ],
+        "title": "ReconCheck"
+      },
+      "ReconDataset": {
+        "properties": {
+          "dataset": {
+            "type": "string",
+            "title": "Dataset"
+          },
+          "source_system": {
+            "type": "string",
+            "title": "Source System"
+          },
+          "batch_id": {
+            "type": "string",
+            "title": "Batch Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "mode": {
+            "type": "string",
+            "title": "Mode"
+          },
+          "rows_loaded": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rows Loaded"
+          },
+          "receipt_rows": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Receipt Rows",
+            "description": "row_count on this batch's receipt"
+          },
+          "receipt_keys": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Receipt Keys"
+          },
+          "receipt_amount": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Receipt Amount"
+          },
+          "injections": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Injections"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "counts_match": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Counts Match",
+            "description": "rows landed == receipt rows (None: no receipt)"
+          },
+          "result": {
+            "type": "string",
+            "enum": [
+              "pass",
+              "warn",
+              "fail",
+              "not_checked"
+            ],
+            "title": "Result"
+          },
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/ReconCheck"
+            },
+            "type": "array",
+            "title": "Checks"
+          }
+        },
+        "type": "object",
+        "required": [
+          "dataset",
+          "source_system",
+          "batch_id",
+          "status",
+          "mode",
+          "rows_loaded",
+          "receipt_rows",
+          "receipt_keys",
+          "receipt_amount",
+          "injections",
+          "finished_at",
+          "counts_match",
+          "result",
+          "checks"
+        ],
+        "title": "ReconDataset"
+      },
+      "Reconciliation": {
+        "properties": {
+          "business_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Business Date"
+          },
+          "available_dates": {
+            "items": {
+              "type": "string",
+              "format": "date"
+            },
+            "type": "array",
+            "title": "Available Dates"
+          },
+          "gate_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gate Run Id"
+          },
+          "checked_business_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checked Business Date",
+            "description": "business_date of the dbt run that checked this day"
+          },
+          "checked_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checked At"
+          },
+          "datasets": {
+            "items": {
+              "$ref": "#/components/schemas/ReconDataset"
+            },
+            "type": "array",
+            "title": "Datasets"
+          },
+          "other_checks": {
+            "items": {
+              "$ref": "#/components/schemas/ReconCheck"
+            },
+            "type": "array",
+            "title": "Other Checks"
+          },
+          "summary": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Summary"
+          }
+        },
+        "type": "object",
+        "required": [
+          "business_date",
+          "available_dates",
+          "gate_run_id",
+          "checked_business_date",
+          "checked_at",
+          "datasets",
+          "other_checks",
+          "summary"
+        ],
+        "title": "Reconciliation"
+      },
+      "ReplayAccepted": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "title": "Request Id"
+          },
+          "status": {
+            "type": "string",
+            "const": "queued",
+            "title": "Status"
+          },
+          "topic": {
+            "type": "string",
+            "title": "Topic"
+          },
+          "message_id": {
+            "type": "string",
+            "title": "Message Id"
+          },
+          "note": {
+            "type": "string",
+            "title": "Note"
+          }
+        },
+        "type": "object",
+        "required": [
+          "request_id",
+          "status",
+          "topic",
+          "message_id",
+          "note"
+        ],
+        "title": "ReplayAccepted"
+      },
+      "ReplayRequest": {
+        "properties": {
+          "business_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Business Date"
+          },
+          "batch_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Batch Id"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500,
+            "title": "Reason",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "business_date"
+        ],
+        "title": "ReplayRequest"
+      },
+      "Resource": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "service": {
+            "type": "string",
+            "title": "Service"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "warning",
+              "missing",
+              "error",
+              "off",
+              "pending"
+            ],
+            "title": "State"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label",
+            "description": "Short state text shown in the pill, e.g. 'Ready', 'Locked'"
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "service",
+          "state",
+          "label"
+        ],
+        "title": "Resource"
+      },
+      "SourceHealth": {
+        "properties": {
+          "system": {
+            "type": "string",
+            "title": "System"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "access": {
+            "type": "string",
+            "title": "Access"
+          },
+          "reachable": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reachable"
+          },
+          "last_probe_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Probe At"
+          },
+          "latency_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latency Ms"
+          },
+          "replica_lag_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Replica Lag Seconds"
+          },
+          "archive_cutoff_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Archive Cutoff Date"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "datasets": {
+            "type": "integer",
+            "title": "Datasets"
+          },
+          "datasets_loaded": {
+            "type": "integer",
+            "title": "Datasets Loaded"
+          },
+          "last_batch_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Batch At"
+          },
+          "last_business_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Business Date"
+          }
+        },
+        "type": "object",
+        "required": [
+          "system",
+          "label",
+          "description",
+          "access",
+          "reachable",
+          "last_probe_at",
+          "latency_ms",
+          "replica_lag_seconds",
+          "archive_cutoff_date",
+          "error",
+          "datasets",
+          "datasets_loaded",
+          "last_batch_at",
+          "last_business_date"
+        ],
+        "title": "SourceHealth"
+      },
+      "SyntheticRow": {
+        "properties": {
+          "dataset": {
+            "type": "string",
+            "title": "Dataset"
+          },
+          "source_system": {
+            "type": "string",
+            "title": "Source System"
+          },
+          "business_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Business Date"
+          },
+          "rows": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rows"
+          },
+          "edge_cases": {
+            "type": "string",
+            "title": "Edge Cases"
+          }
+        },
+        "type": "object",
+        "required": [
+          "dataset",
+          "source_system",
+          "business_date",
+          "rows",
+          "edge_cases"
+        ],
+        "title": "SyntheticRow"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}

@@ -1,0 +1,58 @@
+# Local runtime for the POC:
+#   postgres  - synthetic source replicas (EHR/LIS/Billing), Airflow metadata, local ops-state for API dev
+#   airflow   - Airflow 3 (standalone: api-server, scheduler, dag-processor, triggerer)
+# Airflow talks to the REAL GCP test project (BigQuery, Cloud Storage, Pub/Sub) as sa-ingest,
+# by impersonation from your own `gcloud auth application-default login` - no key files.
+
+name: reconcile-poc
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: reconcile
+      POSTGRES_PASSWORD: reconcile
+      POSTGRES_DB: postgres
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./ingest/docker/postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U reconcile"]
+      interval: 5s
+      retries: 20
+
+  airflow:
+    build: ./ingest
+    command: >
+      bash -c "airflow db migrate &&
+               airflow pools set bq_load 1 'One BigQuery load transaction at a time' &&
+               airflow standalone"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://reconcile:reconcile@postgres:5432/airflow
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      AIRFLOW__CORE__DEFAULT_TIMEZONE: Asia/Kolkata
+      AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_ALL_ADMINS: "True"
+      AIRFLOW__CORE__DAGS_FOLDER: /opt/reconcile/ingest/dags
+      SOURCE_DSN: postgresql://reconcile:reconcile@postgres:5432/source_replica
+      IMPERSONATE_SERVICE_ACCOUNT: ${SA_INGEST}
+      GOOGLE_CLOUD_PROJECT: ${GCP_PROJECT}
+      GOOGLE_APPLICATION_CREDENTIALS: /home/airflow/.config/gcloud/application_default_credentials.json
+      POLICY_FILE: /opt/reconcile/policy/policy.yml   # the recovery engine reads rules and the kill switch here
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./ingest:/opt/reconcile/ingest
+      - ./data-gen:/opt/reconcile/data-gen
+      - ./dbt:/opt/reconcile/dbt
+      - ./policy:/opt/reconcile/policy:ro
+      - ${GCLOUD_CONFIG_DIR:-${HOME}/.config/gcloud}:/home/airflow/.config/gcloud:ro
+
+volumes:
+  pgdata:

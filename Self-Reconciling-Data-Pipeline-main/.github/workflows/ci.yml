@@ -1,0 +1,102 @@
+# CI: runs on every push and pull request. Nothing here touches GCP; it proves the code,
+# the infrastructure definition and the policy are valid before anyone applies them.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    name: Python lint + unit tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: reconcile
+          POSTGRES_PASSWORD: reconcile
+        ports: ["5433:5432"]
+        options: >-
+          --health-cmd "pg_isready -U reconcile" --health-interval 5s --health-retries 20
+    env:
+      TEST_PG_ADMIN_DSN: postgresql://reconcile:reconcile@localhost:5433/postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install ruff pytest -e ./data-gen -e "./ingest[dev]" -e "./api[dev]"
+      - run: ruff check .
+      - run: python -m pytest -q ingest/tests
+      - run: python -m pytest -q api/tests
+      - run: python -m pytest -q tests
+
+  policy-and-dbt:
+    name: Policy schema + dbt parse
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install pyyaml pyarrow dbt-core dbt-bigquery
+      - run: python scripts/check_policy.py
+      - run: python scripts/gen_dbt_sources.py --check
+      - name: dbt parse (no warehouse connection needed)
+        working-directory: dbt/reconcile
+        env: { GCP_PROJECT: reconcile-ci }
+        run: dbt parse --profiles-dir . --no-partial-parse
+
+  terraform:
+    name: Terraform fmt + validate
+    runs-on: ubuntu-latest
+    defaults:
+      run: { working-directory: infra }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - run: terraform fmt -check -recursive
+      - run: terraform init -backend=false
+      - run: terraform validate
+
+  airflow-dags:
+    name: Airflow DAGs import
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: >
+          pip install "apache-airflow==3.3.2" pyarrow "psycopg[binary]" Faker
+          google-cloud-bigquery google-cloud-storage google-cloud-pubsub
+          --constraint https://raw.githubusercontent.com/apache/airflow/constraints-3.3.2/constraints-3.12.txt
+      - name: No import errors
+        env:
+          AIRFLOW_HOME: /tmp/airflow
+          AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+          PYTHONPATH: ingest:data-gen
+        run: |
+          python - <<'EOF'
+          from airflow.dag_processing.dagbag import DagBag
+          bag = DagBag(dag_folder="ingest/dags")
+          assert not bag.import_errors, bag.import_errors
+          assert {"ingest_ehr", "ingest_lis", "ingest_billing", "replay_batch"} <= set(bag.dags), bag.dags
+          print("DAGs:", sorted(bag.dags))
+          EOF
+
+  web:
+    name: Console typecheck, test, build
+    runs-on: ubuntu-latest
+    defaults:
+      run: { working-directory: web }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "22", cache: npm, cache-dependency-path: web/package-lock.json }
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build

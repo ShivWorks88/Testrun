@@ -1,0 +1,50 @@
+flowchart TD
+    SRC[EHR / Lab / Billing sources] --> ING[Airflow ingestion]
+    ING --> RAW[Raw archive + BigQuery raw + receipt]
+    RAW --> DBT[dbt audit models + reconciliation]
+    DBT --> GATE{Publication gate:<br/>all blocking checks pass?}
+    GATE -- Yes --> PUB[Publish verified data to analytics]
+    GATE -- No: HELD --> ENG[Deterministic Decision Engine<br/>five gates]
+    ENG --> RB[Runbook Agent: match only<br/>link on create / resolve]
+    ENG --> CLS{Classify the incident}
+
+    CLS -- "Known, safe fix<br/>e.g. partial_extract" --> GR{Guardrails:<br/>kill switch off,<br/>attempt below 2?}
+    CLS -- "Known, changes meaning<br/>e.g. merged-patient remap" --> APR
+    CLS -- "Known, engineer fix<br/>e.g. unit change, schema drift" --> ESC
+    CLS -. "engineer fix, separately gated" .-> CF[Code-fix Agent in sandbox<br/>tested PR, human review]
+    CLS -- "Unknown or<br/>low-confidence rule" --> AOK{Agents allowed?<br/>enabled + residency,<br/>BAA, no-training}
+
+    AOK -- No --> ESC
+    AOK -- Yes --> CTX[Build MASKED context<br/>counts, check names, evidence refs<br/>log text = data, never instructions]
+    CTX --> DIAG[Diagnosis Agent]
+    DIAG --> VAL{Engine validates:<br/>schema, evidence refs,<br/>catalog + not never-auto,<br/>parameters in incident scope,<br/>confidence >= 0.80}
+    DIAG -. provenance row for every call .-> PROV[(Provenance log)]
+    VAL -- "Invalid, timeout<br/>or failure" --> ESC
+    VAL -- Valid --> APR
+
+    APR[Create approval PENDING<br/>expiry + fingerprint] --> CARD[Card facts from the approval record<br/>+ summary by Communication Agent]
+    CARD --> UI[Console approval card<br/>Slack later via signed callback]
+    UI --> DEC{Decision by the dataset's<br/>data owner, not the requester}
+    DEC -- Rejected --> ESC
+    DEC -- "No answer: Expiry sweep" --> ESC
+    DEC -- Approved --> RCK{Re-check: fingerprint,<br/>incident open, policy version,<br/>kill switch, attempt cap}
+    RCK -- Stale / blocked --> ESC
+    RCK -- OK --> EXE
+    GR -- Yes --> EXE
+    GR -- "Kill switch ON" --> REC[Recommend only:<br/>person decides] --> ESC
+    GR -- "Attempt cap reached" --> ESC
+
+    EXE[Recovery Executor<br/>journal before + after] --> VER{dbt rebuild +<br/>gate: all blocking<br/>checks pass?}
+    VER -- Yes --> PUB2[Publish verified data<br/>incident RESOLVED]
+    VER -- "No, attempt < 2" --> ENG
+    VER -- "No, attempt = 2" --> ESC
+    ESC[Escalate to a person<br/>publication stays HELD,<br/>users keep last verified day]
+
+    classDef ai fill:#2b1f4d,stroke:#9b8cff,color:#e6e1ff;
+    classDef stop fill:#4a1d1d,stroke:#ff8a80,color:#ffe5e2;
+    classDef ok fill:#123b2a,stroke:#6fd39b,color:#dcffe9;
+    classDef gate fill:#0b1b33,stroke:#7fb2ff,color:#cfe2ff,stroke-dasharray: 4 3;
+    class DIAG,RB,CF,CARD ai;
+    class ESC,REC stop;
+    class PUB,PUB2 ok;
+    class GATE,CLS,GR,AOK,VAL,DEC,RCK,VER gate;

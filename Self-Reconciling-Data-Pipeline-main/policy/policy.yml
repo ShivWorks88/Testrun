@@ -1,0 +1,134 @@
+# Recovery policy, POC subset of 1.7.0.
+# Read by the decision engine (Phase 4). Validated in CI by scripts/check_policy.py.
+# Every decision records `version`; change this file only through a reviewed pull request.
+
+version: "1.7.0-poc.1"
+
+# Kill switch: when true, every automatic action becomes a recommendation for a human.
+kill_switch: false
+
+timezone: Asia/Kolkata
+
+limits:
+  attempt_cap: 2                 # automatic actions per incident
+  l1_budget_minutes: 30          # auto-fix must be verified within this, or escalate to L2
+  lock_lease_seconds: 900        # partition lock lease for the executor
+
+# ------------------------------------------------------------------ AI agents
+agents:
+  enabled: false                 # stays false until residency_confirmed is true (Phase 0 AI track)
+  residency_confirmed: false     # written confirmation: India processing, BAA coverage, no training on prompts
+  min_confidence: 0.80           # proposals below this are rejected and escalated
+  timeout_seconds: 20            # on timeout the incident escalates as unknown; the run never waits
+
+# ------------------------------------------------------------------ test outcomes
+# Each dbt test carries meta.policy_outcome; the publication gate reads that, not dbt severity.
+policy_outcomes:
+  - informational
+  - warning
+  - blocking_unless_explained
+  - blocking
+  - threshold
+
+# ------------------------------------------------------------------ action catalog
+# The only actions the executor may ever run. Agents may only propose these.
+actions:
+  reextract_from_raw:   { mode: auto,     reversible: true,  scope: window,    description: "Replay a window from the source or archive, then rebuild and re-verify" }
+  rebuild_partition:    { mode: auto,     reversible: true,  scope: partition, description: "insert_overwrite the affected business date in audit" }
+  link_unknown_member:  { mode: auto,     reversible: true,  scope: rows,      description: "Point young orphans at the unknown member; re-link next run" }
+  quarantine_rows:      { mode: approve,  reversible: true,  scope: rows,      description: "Move rows from marts to quarantine (moved, never copied)" }
+  remap_merged_patient: { mode: approve,  reversible: true,  scope: rows,      description: "Remap a retired patient ID to its surviving ID (data owner approves)" }
+  wait_and_recheck:     { mode: auto,     reversible: true,  scope: dataset,   description: "Hold and re-check on the next run (late data)" }
+  log_expected:         { mode: auto,     reversible: true,  scope: none,      description: "Record an expected difference; no data change" }
+  hold_publish:         { mode: auto,     reversible: true,  scope: dataset,   description: "Keep the last verified day in analytics, flagged delayed" }
+  escalate:             { mode: auto,     reversible: true,  scope: none,      description: "Hand over to L2/L3 with evidence" }
+
+never_auto:                      # can never be chosen automatically, by a rule or an agent
+  - full_refresh
+  - rollback
+  - source_delete
+
+# ------------------------------------------------------------------ severity
+severity:
+  P1: "Critical published data wrong or missing, or wide blast radius"
+  P2: "Important data delayed or partly wrong; last verified day still available"
+  P3: "Low impact, caught before publication"
+
+# ------------------------------------------------------------------ outage breaker (Phase 6)
+breakers:
+  LIS:
+    open_when: { failing_datasets: 3, or_share_of_inventory: 0.5, within_minutes: 30 }
+    close_when: [source_probe_passes, freshness_passes]
+
+# ------------------------------------------------------------------ rules
+# Stage 1 safety overrides run first, stage 2 ordinary rules (first match wins), stage 3 the gate.
+# The last ordinary rule must be the fallback (match: any).
+rules:
+  safety_overrides:
+    - id: checks_did_not_run
+      when: { expected_tests_missing: true }
+      action: hold_publish
+      route: L3
+      severity: P2
+    - id: control_totals_missing
+      when: { control_totals_present: false }
+      action: hold_publish
+      route: L2
+      severity: P2
+    - id: outage_breaker_open
+      when: { breaker_open: true }
+      action: hold_publish
+      route: L2
+      severity: P1
+
+  ordinary:
+    - id: archived_history
+      when: { failure: count_excess, all_rows_before_archive_cutoff: true }
+      action: log_expected
+      route: auto
+      severity: P3
+    - id: partial_extract
+      when: { failure: count_gap, gap_within_single_window: true }
+      action: reextract_from_raw
+      route: auto
+      severity: P2
+    - id: duplicate_batch
+      when: { failure: raw_duplicates }
+      action: rebuild_partition
+      route: auto
+      severity: P3
+    - id: offsetting_errors
+      when: { failure: distinct_keys_or_amount_mismatch, count_matches: true }
+      action: reextract_from_raw
+      route: auto
+      severity: P2
+    - id: young_orphan
+      when: { failure: relationship, max_orphan_age_hours: 2 }
+      action: link_unknown_member
+      route: auto
+      severity: P3
+    - id: merged_patient_orphan
+      when: { failure: relationship, parent_in_mpi_merges: true }
+      action: remap_merged_patient
+      route: L2
+      severity: P2
+    - id: unit_change
+      when: { failure: value_range_or_anomaly }
+      action: hold_publish
+      route: L3
+      severity: P2
+    - id: value_corruption
+      when: { failure: value_level_mismatch }
+      action: hold_publish
+      route: L3
+      severity: P2
+    - id: suspected_regression
+      when: { failure: grain_or_model_test, recent_release_touched_scope: true }
+      action: hold_publish
+      route: L3
+      severity: P2
+    - id: fallback_unknown
+      when: { any: true }
+      action: escalate
+      route: L2
+      severity: P2

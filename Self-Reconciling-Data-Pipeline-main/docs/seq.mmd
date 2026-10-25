@@ -1,0 +1,55 @@
+sequenceDiagram
+    autonumber
+    participant E as Decision Engine
+    participant P as Policy (policy.yml)
+    participant D as Diagnosis Agent
+    participant C as Communication Agent
+    participant U as Console / Slack
+    participant A as Approval Service
+    participant S as Expiry Sweep
+    participant X as Recovery Executor
+    participant G as dbt + Publication Gate
+
+    Note over E: Incident is UNKNOWN or low-confidence rule match
+    E->>P: Agents allowed? (agents.enabled, residency/BAA/no-training refs, kill switch)
+    alt Not allowed
+        E->>E: Escalate to a person (no AI call), publication stays HELD
+    else Allowed
+        E->>E: Build MASKED context: counts, check names, evidence refs, log text marked as data
+        E->>D: Send masked incident context
+        D-->>E: JSON: facts with evidence refs, hypotheses, action + parameters, confidence
+        E->>E: Record provenance (agent, model, prompt, policy versions)
+        E->>E: Validate schema, evidence refs exist, action in catalog and not never-auto, parameters inside incident scope, confidence ≥ 0.80
+        alt Invalid output, timeout or platform error
+            E->>E: Escalate as unknown, publication stays HELD
+        else Valid proposal
+            E->>A: Create approval PENDING (expiry, fingerprint over incident, action, params, evidence, policy version)
+            E->>C: Ask for a plain-language summary only
+            C-->>E: Summary text (no PHI)
+            E->>U: Card: FACTS from the approval record (action, dataset, date, counts, fingerprint) + AI summary
+            alt Approver answers
+                U->>A: Approve / Reject (signed, Slack: signature, timestamp, channel, replay check)
+                A->>A: Approver = data owner of this dataset, not the requester, not an agent
+                A->>A: Atomic PENDING → APPROVED or REJECTED (duplicate returns existing outcome)
+                A->>E: Outcome
+            else No answer before expiry
+                S->>A: PENDING → EXPIRED
+                A->>E: Outcome EXPIRED
+            end
+            E->>P: Re-check: fingerprint unchanged, incident still open, same policy version, kill switch off, attempt below cap
+            alt Approved and re-check passes
+                E->>X: Authorise the approved catalog action
+                X->>X: Journal before, run action, journal after
+                X->>G: Rebuild and re-run all blocking checks
+                G-->>E: Verification result
+                alt All blocking checks pass
+                    G->>G: Publish verified day to analytics
+                    E->>E: Incident RESOLVED
+                else Checks still fail
+                    E->>E: Attempt < 2: decide again (new proposal and approval) / else escalate, HELD
+                end
+            else Rejected, expired, stale or re-check failed
+                E->>E: Escalate, publication stays HELD
+            end
+        end
+    end

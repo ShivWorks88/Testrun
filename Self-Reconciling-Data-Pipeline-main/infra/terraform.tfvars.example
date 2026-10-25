@@ -1,0 +1,10 @@
+# Copy to terraform.tfvars and fill in. terraform.tfvars is git-ignored.
+project_id     = "your-project-id"
+operator_email = "you@gmail.com"
+
+# region                 = "asia-south1"
+# archive_retention_days = 7
+# lock_archive_retention = false   # IRREVERSIBLE when true; read docs/RUNBOOK.md first
+# enable_cloud_sql       = true
+# billing_account_id     = "000000-000000-000000"   # enables the budget alert
+# budget_amount          = 2000                     # in your billing currency

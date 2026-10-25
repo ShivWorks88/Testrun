@@ -1,0 +1,182 @@
+# Generated from ingest/reconcile_ingest/datasets.py by scripts/gen_dbt_sources.py. Do not edit by hand.
+version: 2
+
+sources:
+  - name: raw
+    description: Raw extracts, one partition per facility-local business date. Written by ingest only.
+    schema: raw
+    config:
+      loaded_at_field: _loaded_at
+      freshness:
+        warn_after: {count: 26, period: hour}
+        error_after: {count: 50, period: hour}
+    tables:
+      - name: patients
+        description: "EHR ehr.patients; business date from updated_at"
+        config:
+          meta:
+            source_system: EHR
+            criticality: high
+            phi: true
+            key: patient_id
+        columns:
+          - name: patient_id
+            data_tests:
+              - not_null:
+                  config: {meta: {policy_outcome: blocking}}
+          - name: _batch_id
+            data_tests:
+              - not_null:
+                  config: {meta: {policy_outcome: blocking}}
+      - name: encounters
+        description: "EHR ehr.encounters; business date from admit_ts"
+        config:
+          meta:
+            source_system: EHR
+            criticality: high
+            phi: true
+            key: encounter_id
+        columns:
+          - name: encounter_id
+            data_tests:
+              - not_null:
+                  config: {meta: {policy_outcome: blocking}}
+          - name: _batch_id
+            data_tests:
+              - not_null:
+                  config: {meta: {policy_outcome: blocking}}
+      - name: diagnoses
+        description: "EHR ehr.diagnoses; business date from recorded_ts"
+        config:
+          meta:
+            source_system: EHR
+            criticality: medium
+            phi: true
+            key: diagnosis_id
+        columns:
+          - name: diagnosis_id
+            data_tests:
+              - not_null:
+                  config: {meta: {policy_outcome: blocking}}
+          - name: _batch_id
+            data_tests:
+              - not_null:
+                  config: {meta: {policy_outcome: blocking}}
+      - name: lab_orders
+        description: "LIS lis.lab_orders; business date from ordered_ts"
+        config:
+          meta:
+            source_system: LIS
+            criticality: medium
+            phi: true
+            key: lab_order_id
+        columns:
+          - name: lab_order_id
+            data_tests:
+              - not_null:
+                  config: {meta: {policy_outcome: blocking}}
+          - name: _batch_id
+            data_tests:
+              - not_null:
+                  config: {meta: {policy_outcome: blocking}}
+      - name: lab_panels
+        description: "LIS lis.lab_panels; business date from ordered_ts"
+        config:
+          meta:
+            source_system: LIS
+            criticality: medium
+            phi: true
+            key: lab_panel_id
+        columns:
+          - name: lab_panel_id
+            data_tests:
+              - not_null:
+                  config: {meta: {policy_outcome: blocking}}
+          - name: _batch_id
+            data_tests:
+              - not_null:
+                  config: {meta: {policy_outcome: blocking}}
+      - name: lab_results
+        description: "LIS lis.lab_results; business date from resulted_ts"
+        config:
+          meta:
+            source_system: LIS
+            criticality: high
+            phi: true
+            key: lab_result_id
+            critical_fields: [result_value, result_unit, collected_at]
+        columns:
+          - name: lab_result_id
+            data_tests:
+              - not_null:
+                  config: {meta: {policy_outcome: blocking}}
+          - name: _batch_id
+            data_tests:
+              - not_null:
+                  config: {meta: {policy_outcome: blocking}}
+      - name: claims
+        description: "Billing billing.claims; business date from submitted_ts"
+        config:
+          meta:
+            source_system: BILLING
+            criticality: high
+            phi: true
+            key: claim_id
+        columns:
+          - name: claim_id
+            data_tests:
+              - not_null:
+                  config: {meta: {policy_outcome: blocking}}
+          - name: _batch_id
+            data_tests:
+              - not_null:
+                  config: {meta: {policy_outcome: blocking}}
+      - name: payments
+        description: "Billing billing.payments; business date from paid_ts"
+        config:
+          meta:
+            source_system: BILLING
+            criticality: medium
+            phi: true
+            key: payment_id
+        columns:
+          - name: payment_id
+            data_tests:
+              - not_null:
+                  config: {meta: {policy_outcome: blocking}}
+          - name: _batch_id
+            data_tests:
+              - not_null:
+                  config: {meta: {policy_outcome: blocking}}
+      - name: adjustments
+        description: "Billing billing.adjustments; business date from adjusted_ts"
+        config:
+          meta:
+            source_system: BILLING
+            criticality: low
+            phi: true
+            key: adjustment_id
+        columns:
+          - name: adjustment_id
+            data_tests:
+              - not_null:
+                  config: {meta: {policy_outcome: blocking}}
+          - name: _batch_id
+            data_tests:
+              - not_null:
+                  config: {meta: {policy_outcome: blocking}}
+  - name: ops
+    description: Pipeline metadata written by ingest. No clinical values.
+    schema: ops
+    tables:
+      - name: control_totals
+        description: Totals each extract computed in the same snapshot as its rows. One row per dataset, business date and batch.
+        config:
+          loaded_at_field: extracted_at
+          freshness:
+            warn_after: {count: 26, period: hour}
+            error_after: {count: 50, period: hour}
+      - name: batches
+        description: Append-only log of every extract and replay outcome.
+      - name: source_health
+        description: Source probes written at the start of every ingest run.

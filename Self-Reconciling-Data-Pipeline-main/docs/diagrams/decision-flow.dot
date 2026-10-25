@@ -1,0 +1,40 @@
+// Incident lifecycle and the five gates (Phase 4-6)
+// Render: dot -Tpng -Gdpi=160 docs/diagrams/decision-flow.dot -o docs/images/decision-flow.png
+digraph FLOW {
+  graph [rankdir=TB, fontname="Inter", fontsize=20, labelloc=t, labeljust=l, pad=0.4, nodesep=0.35, ranksep=0.4,
+         label=<<B>Decision engine — from failure to verified publish</B><BR/><FONT POINT-SIZE="12" COLOR="#555555">deterministic: the same evidence always gives the same decision</FONT>>];
+  node [shape=box, style="rounded,filled", fontname="Inter", fontsize=11, fillcolor="#ffffff", color="#5b6472", margin="0.15,0.07"];
+  edge [fontname="Inter", fontsize=10, color="#5b6472"];
+
+  ev   [label=<<B>run-complete event</B><BR/>dbt results + control totals>, fillcolor="#eef1f5"];
+  claim[label=<<B>Run-ID claim</B> (atomic insert, lease)<BR/>duplicate delivery → stop>];
+  brk  [label=<<B>Outage breaker open for this source?</B><BR/>≥3 datasets or 50% in 30 min>, shape=diamond, fillcolor="#f3e8ff", margin="0.03,0.03"];
+  g1   [label=<<B>Gate 1</B> — did the checks run?<BR/>expected test count · totals present>, fillcolor="#e8f0fe"];
+  g2   [label=<<B>Gate 2</B> — can we trust them?<BR/>replica lag · no outage group>, fillcolor="#e8f0fe"];
+  g3   [label=<<B>Gate 3</B> — is the difference expected?<BR/>archived · merged · late · in tolerance>, fillcolor="#e8f0fe"];
+  g4   [label=<<B>Gate 4</B> — which rule matches?<BR/>safety overrides → rules → fallback>, fillcolor="#e8f0fe"];
+  g5   [label=<<B>Gate 5</B> — do guardrails allow a fix?<BR/>attempt ≤ 2 · not never-auto · kill switch off>, fillcolor="#e8f0fe"];
+  agent[label=<<B>Diagnosis agent</B> (advisory)<BR/>proposal validated, then back through gates>, fillcolor="#fdf0d5"];
+
+  logx [label=<<B>log_expected</B><BR/>no fix, no alarm>, fillcolor="#d9f2e3"];
+  auto [label=<<B>Auto-fix (L1)</B><BR/>one catalog action · journal before/after>, fillcolor="#d9f2e3"];
+  appr [label=<<B>Approve (L2)</B><BR/>Slack owner decision>, fillcolor="#fff4cc"];
+  eng  [label=<<B>Engineer fix (L3)</B><BR/>escalate with evidence ref>, fillcolor="#fde2e2"];
+  hold [label=<<B>HOLD source</B><BR/>one parent incident, no per-dataset fixes>, fillcolor="#f3e8ff"];
+  ver  [label=<<B>Re-verify</B><BR/>reconciliation passes?>, shape=diamond, fillcolor="#ffffff", margin="0.03,0.03"];
+  pub  [label=<<B>Publish</B><BR/>clone audit → analytics · close incident>, fillcolor="#d9f2e3"];
+  held [label=<<B>Stay HELD</B><BR/>reports show last verified day, marked delayed>, fillcolor="#fde2e2"];
+
+  ev -> claim -> brk;
+  brk -> hold [label="yes"];
+  brk -> g1 [label="no"];
+  g1 -> g2 [label="yes"]; g1 -> eng [label="no (blocking)"];
+  g2 -> g3 [label="yes"]; g2 -> held [label="no → wait_and_recheck"];
+  g3 -> logx [label="yes"]; g3 -> g4 [label="no"];
+  g4 -> g5 [label="rule found"]; g4 -> agent [label="unknown"]; agent -> g5 [label="valid proposal"]; agent -> eng [label="rejected / timeout"];
+  g5 -> auto [label="auto"]; g5 -> appr [label="needs owner"]; g5 -> eng [label="never-auto /\ncap reached"];
+  auto -> ver; appr -> ver [label="approved"];
+  ver -> pub [label="yes"]; ver -> held [label="no → attempt 2 or escalate"];
+  hold -> g1 [label="probe + freshness pass\n(children re-run, oldest first)", style=dashed];
+  {rank=same; logx; g4}
+}

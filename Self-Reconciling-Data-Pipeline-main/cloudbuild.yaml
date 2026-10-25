@@ -1,0 +1,15 @@
+# Cloud Build: build the console + API image and push it to Artifact Registry.
+# Runs as sa-build (see infra/registry_build.tf), never as the default compute account.
+substitutions:
+  _IMAGE: asia-south1-docker.pkg.dev/PROJECT/reconcile/console:latest
+  _GIT_SHA: dev
+
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args: ["build", "-f", "api/Dockerfile", "-t", "${_IMAGE}", "--label", "git_sha=${_GIT_SHA}", "."]
+
+images: ["${_IMAGE}"]
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: E2_HIGHCPU_8

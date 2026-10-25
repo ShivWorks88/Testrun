@@ -1,0 +1,32 @@
+# dbt builds into the `audit` dataset (Write-Audit-Publish). Only the publish job writes analytics.
+# Credentials: your ADC login, impersonating a service account. No key files.
+#   audit      → sa-dbt         (staging, marts, all normal tests)
+#   valuerecon → sa-valuerecon  (value-level reconciliation only; the only identity with the KMS key)
+reconcile:
+  target: audit
+  outputs:
+    audit:
+      type: bigquery
+      method: oauth
+      project: "{{ env_var('GCP_PROJECT', 'reconcile-ci') }}"
+      dataset: audit
+      location: "{{ env_var('GCP_REGION', 'asia-south1') }}"
+      impersonate_service_account: "{{ env_var('SA_DBT', '') }}"
+      threads: 4
+      priority: interactive
+      job_execution_timeout_seconds: 600
+      job_retries: 1
+      maximum_bytes_billed: "{{ env_var('BQ_MAX_BYTES_BILLED', '1073741824') | int }}"
+
+    valuerecon:
+      type: bigquery
+      method: oauth
+      project: "{{ env_var('GCP_PROJECT', 'reconcile-ci') }}"
+      dataset: evidence_restricted
+      location: "{{ env_var('GCP_REGION', 'asia-south1') }}"
+      impersonate_service_account: "{{ env_var('SA_VALUERECON', '') }}"
+      threads: 2
+      priority: interactive
+      job_execution_timeout_seconds: 600
+      job_retries: 1
+      maximum_bytes_billed: "{{ env_var('BQ_MAX_BYTES_BILLED', '1073741824') | int }}"
