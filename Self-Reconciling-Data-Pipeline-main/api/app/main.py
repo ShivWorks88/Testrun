@@ -14,7 +14,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .core.config import get_settings
 from .db import session
-from .routers import ingestion, recovery, system
+from .routers import approvals, ingestion, recovery, system
 
 log = logging.getLogger("reconcile_api")
 
@@ -30,14 +30,15 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     settings = get_settings()
-    app = FastAPI(title="Reconcile console API", version="0.2.0", lifespan=lifespan,
-                  description="Self-Reconciling Data Pipeline POC: Phases 0–4")
+    app = FastAPI(title="Reconcile console API", version="0.3.0", lifespan=lifespan,
+                  description="Self-Reconciling Data Pipeline POC: Phases 0–5 (stage 1: approvals)")
     if settings.env == "local":
         app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173"], allow_methods=["*"],
                            allow_headers=["*"])
     app.include_router(system.router, prefix="/api")
     app.include_router(ingestion.router, prefix="/api")
     app.include_router(recovery.router, prefix="/api")
+    app.include_router(approvals.router, prefix="/api")
 
     @app.get("/healthz", include_in_schema=False)
     def healthz():

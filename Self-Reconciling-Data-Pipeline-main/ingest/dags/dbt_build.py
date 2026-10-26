@@ -1,6 +1,8 @@
 """dbt_build — build, test, value-check and publish one business date (Phases 2–4).
 
 Trigger:  airflow dags trigger dbt_build --conf '{"business_date":"2026-10-14"}'
+Test only: add "dbt_inject": ["build_error"] (also schema_drift, join_fanout, staging_duplicates); dbt applies
+           them only when ALLOW_INJECTIONS=true. Engine-triggered rebuilds never pass switches.
 Tasks:    dbt_debug → dbt_build_and_test (sa-dbt) → value_recon (sa-valuerecon) → publish (sa-publish)
           → start_recovery (Phase 4: hands the result to recovery_engine)
 `publish` runs even when checks fail (trigger_rule all_done), so a failed day is recorded as HELD.
@@ -19,7 +21,7 @@ DBT_DIR = "/opt/reconcile/dbt/reconcile"
 DBT = "/home/airflow/dbt-venv/bin/dbt"
 AUDIT_TARGET = "/tmp/dbt-target/audit"
 VALUERECON_TARGET = "/tmp/dbt-target/valuerecon"
-VARS = "--vars '{business_date: {{ params.business_date }}}'"
+VARS = "--vars '{business_date: {{ params.business_date }}, inject: {{ params.dbt_inject | tojson }}}'"
 
 
 def dbt(args: str, target_path: str) -> str:
@@ -41,7 +43,8 @@ with DAG(
     start_date=pendulum.datetime(2026, 10, 1, tz="Asia/Kolkata"),
     catchup=False,
     max_active_runs=1,
-    params={"business_date": Param("2026-10-14", type="string")},
+    params={"business_date": Param("2026-10-14", type="string"),
+            "dbt_inject": Param([], type="array", description="Failure-suite switches (test project only)")},
     tags=["reconcile", "dbt", "publish"],
 ) as dag:
     dbt_debug = BashOperator(

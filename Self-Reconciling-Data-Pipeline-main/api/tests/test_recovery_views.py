@@ -51,8 +51,9 @@ class FakeRecovery:
         ]
 
     def publication_cells(self, n_dates=14):
-        mk = lambda ds, d, st: {"dataset": ds, "business_date": d, "state": st, "reasons": "r", "decided_at": T0,
-                                "snapshot": None}
+        def mk(ds, d, st):
+            return {"dataset": ds, "business_date": d, "state": st, "reasons": "r", "decided_at": T0,
+                    "snapshot": None}
         return [mk("fct_daily_claims", date(2026, 10, 12), "PUBLISHED"), mk("fct_daily_claims", D, "HELD"),
                 mk("dim_encounters", D, "PUBLISHED")]
 
@@ -61,12 +62,13 @@ class FakeRecovery:
                  "decided_at": T0, "snapshot": None, "gate_run_id": "g1", "actor": "sa-publish@x"}]
 
     def incident_events(self, incident_id=None, limit=2000):
-        ev = lambda i, m, st, att, gates=None: {
-            "incident_id": "INC-1", "incident_key": "partial_extract:encounters:2026-10-13", "business_date": D,
-            "dataset": "encounters", "failure_type": "partial_extract", "status": st, "attempt": att,
-            "action": "reextract_from_source", "mode": "auto", "note": st.lower(), "gate_run_id": "g1",
-            "evidence": json.dumps({"missing_rows": 117}), "gates": json.dumps(gates) if gates else None,
-            "at": T0 + timedelta(minutes=m)}
+        def ev(i, m, st, att, gates=None):
+            return {
+                "incident_id": "INC-1", "incident_key": "partial_extract:encounters:2026-10-13", "business_date": D,
+                "dataset": "encounters", "failure_type": "partial_extract", "status": st, "attempt": att,
+                "action": "reextract_from_source", "mode": "auto", "note": st.lower(), "gate_run_id": "g1",
+                "evidence": json.dumps({"missing_rows": 117}), "gates": json.dumps(gates) if gates else None,
+                "at": T0 + timedelta(minutes=m)}
         rows = [ev(3, 2, "RESOLVED", 1), ev(2, 0.3, "ACTING", 1), ev(1, 0, "ACTING", 1, GATES)]
         return [r for r in rows if incident_id in (None, r["incident_id"])]
 

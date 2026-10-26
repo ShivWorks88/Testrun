@@ -92,7 +92,7 @@ def _apply_injections(ds: Dataset, table: pa.Table, injections: list[str], tz, b
         values = table["result_value"].to_pylist()
         units = table["result_unit"].to_pylist()
         new_values, new_units = [], []
-        for code, value, unit in zip(codes, values, units):
+        for code, value, unit in zip(codes, values, units, strict=False):
             if code == "GLU":
                 if value is not None:
                     value = round(float(value) / GLUCOSE_MG_DL_PER_MMOL_L, 3)

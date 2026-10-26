@@ -1,4 +1,4 @@
-"""Phase 4 — recovery engine (deterministic rules, no AI), driven by policy/policy.yml.
+"""Phase 4/5 — recovery engine (deterministic rules, no AI), driven by policy/policy.yml.
 
 After every dbt_build the engine reads what the gate recorded, opens an incident per problem,
 diagnoses it against the source receipt, picks the rule from policy.yml (stage 1 safety overrides,
@@ -6,15 +6,24 @@ then stage 2 ordinary rules, first match wins), applies the five gates and — o
 route is `auto` and the action is safe — re-extracts the bad day and asks dbt_build to rebuild and
 re-verify. Every decision records the policy version, rule, severity and route.
 
+Phase 5 stage 1 (approvals): when the rule's route is L2 and the action is one the executor can run,
+the engine writes an approval card (facts from the engine, never typed by a person) and the incident
+waits in AWAITING_APPROVAL. The data owner decides in the console. `process-approvals` (DAG
+approval_worker) expires unanswered cards, and before acting on an approval re-checks everything:
+same evidence fingerprint, incident still waiting, same policy version, kill switch off, attempt cap.
+
     python -m reconcile_ingest.engine evaluate --date 2026-10-14 [--dry-run]
     python -m reconcile_ingest.engine diagnose --dataset encounters --date 2026-10-14
     python -m reconcile_ingest.engine status
     python -m reconcile_ingest.engine policy        # show what the engine reads from policy.yml
+    python -m reconcile_ingest.engine approvals     # list approval cards and their state
+    python -m reconcile_ingest.engine process-approvals [--pretend-later-minutes 180]
 """
 from __future__ import annotations
 
 import argparse
 import datetime as dt
+import hashlib
 import json
 import os
 import re
@@ -42,7 +51,8 @@ SOURCE_DAG = {
 IMPLEMENTED_ACTIONS = {"reextract_from_raw"}
 # diagnoses that mean the raw data itself is wrong (a re-extract can help)
 RAW_PROBLEMS = {"partial_extract", "missing_load", "offsetting_errors", "amount_mismatch", "missing_receipt"}
-OPEN_STATES = {"OPEN", "ACTING", "RECOMMENDED", "ESCALATED"}
+OPEN_STATES = {"OPEN", "ACTING", "RECOMMENDED", "ESCALATED", "AWAITING_APPROVAL"}
+APPROVAL_ROUTES = {"L2"}  # routes where a named person approves before the engine acts
 
 INCIDENT_SCHEMA = [
     bigquery.SchemaField("incident_id", "STRING"),
@@ -50,10 +60,10 @@ INCIDENT_SCHEMA = [
     bigquery.SchemaField("business_date", "DATE"),
     bigquery.SchemaField("dataset", "STRING"),
     bigquery.SchemaField("failure_type", "STRING"),
-    bigquery.SchemaField("status", "STRING"),   # OPEN | ACTING | RECOMMENDED | ESCALATED | RESOLVED
+    bigquery.SchemaField("status", "STRING"),   # OPEN|ACTING|RECOMMENDED|AWAITING_APPROVAL|ESCALATED|RESOLVED
     bigquery.SchemaField("attempt", "INT64"),
     bigquery.SchemaField("action", "STRING"),
-    bigquery.SchemaField("mode", "STRING"),     # auto | recommend | escalate | none
+    bigquery.SchemaField("mode", "STRING"),     # auto | approve | recommend | escalate | none
     bigquery.SchemaField("evidence", "STRING"),  # JSON: counts only, never values
     bigquery.SchemaField("gates", "STRING"),     # JSON: the five gates and their answers
     bigquery.SchemaField("note", "STRING"),
@@ -66,6 +76,44 @@ INCIDENT_SCHEMA = [
     bigquery.SchemaField("severity", "STRING"),
     bigquery.SchemaField("route", "STRING"),
 ]
+
+# Approval cards: written by the engine only (append-only; the newest row per approval_id is its state).
+APPROVAL_SCHEMA = [
+    bigquery.SchemaField("approval_id", "STRING"),
+    bigquery.SchemaField("incident_id", "STRING"),
+    bigquery.SchemaField("incident_key", "STRING"),
+    bigquery.SchemaField("business_date", "DATE"),
+    bigquery.SchemaField("dataset", "STRING"),
+    bigquery.SchemaField("action", "STRING"),
+    bigquery.SchemaField("params", "STRING"),        # JSON: what exactly will run
+    bigquery.SchemaField("status", "STRING"),        # PENDING | APPROVED | REJECTED | EXPIRED | STALE | CANCELLED
+    bigquery.SchemaField("fingerprint", "STRING"),   # hash of incident, action, params, evidence, policy version
+    bigquery.SchemaField("policy_version", "STRING"),
+    bigquery.SchemaField("rule_id", "STRING"),
+    bigquery.SchemaField("severity", "STRING"),
+    bigquery.SchemaField("route", "STRING"),
+    bigquery.SchemaField("attempt", "INT64"),        # the attempt this approval would start
+    bigquery.SchemaField("card", "STRING"),          # JSON: engine-written facts shown to the approver
+    bigquery.SchemaField("gate_run_id", "STRING"),
+    bigquery.SchemaField("requested_by", "STRING"),
+    bigquery.SchemaField("requested_at", "TIMESTAMP"),
+    bigquery.SchemaField("expires_at", "TIMESTAMP"),
+    bigquery.SchemaField("decided_by", "STRING"),
+    bigquery.SchemaField("decision_reason", "STRING"),
+    bigquery.SchemaField("note", "STRING"),
+    bigquery.SchemaField("at", "TIMESTAMP"),
+]
+DECISIONS_TABLE = "approval_decisions"   # written by the console (sa-api) only; created by Terraform
+
+# Phase 5 stage 2: one row per agent call — accepted, rejected and timed out alike (T22). Counts and refs only.
+AGENT_CALL_SCHEMA = [bigquery.SchemaField(n, t) for n, t in [
+    ("call_id", "STRING"), ("incident_id", "STRING"), ("incident_key", "STRING"), ("business_date", "DATE"),
+    ("dataset", "STRING"), ("agent_id", "STRING"), ("provider", "STRING"), ("model", "STRING"),
+    ("prompt_version", "STRING"), ("fake_mode", "STRING"), ("policy_version", "STRING"), ("gate_run_id", "STRING"),
+    ("request_refs", "STRING"), ("output", "STRING"), ("validation", "STRING"), ("reason", "STRING"),
+    ("proposed_action", "STRING"), ("confidence", "FLOAT64"), ("outcome", "STRING"), ("latency_ms", "INT64"),
+    ("actor", "STRING"), ("at", "TIMESTAMP")]]
+UNKNOWN_RULE = "fallback_unknown"        # the policy rule for "no rule explains this" → may consult an agent
 
 
 def _now() -> str:
@@ -146,7 +194,7 @@ def gates(finding: dict, policy: dict, checks_ran: bool, attempts: int) -> dict:
          "pass": True},
         {"gate": 4, "question": "Which rule matches?",
          "answer": f"{stage} · {rule['id']} → {action} (route {route}, {severity}){window_note}",
-         "pass": route == "auto"},
+         "pass": route == "auto" or route in APPROVAL_ROUTES},
         {"gate": 5, "question": "Do guardrails allow a fix?", "answer": "", "pass": False},
     ]
 
@@ -157,9 +205,23 @@ def gates(finding: dict, policy: dict, checks_ran: bool, attempts: int) -> dict:
 
     if not checks_ran and rule["id"] != "checks_did_not_run":
         return done("escalate", "checks did not run — never act on incomplete evidence")
+    mode_in_catalog = (catalog.get(action) or {}).get("mode")
+    if route in APPROVAL_ROUTES:
+        # a person approves; the engine still refuses anything it could never run safely
+        if action == "escalate":
+            return done("escalate", f"route {route}: a person decides and fixes")
+        if action in never or action not in catalog:
+            return done("escalate", f"route {route}: {action} is never run by the engine — a person fixes it")
+        if action not in IMPLEMENTED_ACTIONS:
+            return done("escalate", f"route {route}: {action} is not implemented in the POC executor yet")
+        if attempts >= cap:
+            return done("escalate", f"attempt limit reached ({attempts} of {cap})")
+        if kill:
+            return done("recommend", "kill switch ON in policy.yml — recommend only, no approval card")
+        return done("approve", f"route {route}: attempt {attempts + 1} of {cap} waits for the data owner's approval")
     if route != "auto":
-        return done("escalate", f"route {route}: a person decides (approvals arrive in Phase 5 stage 1)")
-    if action in never or (catalog.get(action) or {}).get("mode") != "auto":
+        return done("escalate", f"route {route}: a person decides and fixes")
+    if action in never or mode_in_catalog != "auto":
         return done("escalate", f"{action} is never automatic or needs approval")
     if action not in IMPLEMENTED_ACTIONS:
         return done("escalate", f"{action} is not implemented in the POC executor yet")
@@ -176,7 +238,8 @@ def _q(bq, sql, **params):
         if isinstance(v, dt.date):
             return bigquery.ScalarQueryParameter(k, "DATE", v)
         if isinstance(v, list):
-            return bigquery.ArrayQueryParameter(k, "DATE", v)
+            kind = "STRING" if v and isinstance(v[0], str) else "DATE"
+            return bigquery.ArrayQueryParameter(k, kind, v)
         return bigquery.ScalarQueryParameter(k, "STRING", v)
     cfg = bigquery.QueryJobConfig(query_parameters=[param(k, v) for k, v in params.items()])
     return [dict(r) for r in bq.query(sql, job_config=cfg).result()]
@@ -186,6 +249,10 @@ def ensure_table(bq) -> None:
     t = bigquery.Table(f"{bq.project}.{INCIDENT_DS}.incidents", schema=INCIDENT_SCHEMA)
     t.time_partitioning = bigquery.TimePartitioning(field="business_date")
     bq.create_table(t, exists_ok=True)
+    bq.create_table(bigquery.Table(f"{bq.project}.{INCIDENT_DS}.approvals", schema=APPROVAL_SCHEMA),
+                    exists_ok=True)
+    bq.create_table(bigquery.Table(f"{bq.project}.{INCIDENT_DS}.agent_calls", schema=AGENT_CALL_SCHEMA),
+                    exists_ok=True)
 
 
 def record(bq, rows: list[dict]) -> None:
@@ -194,6 +261,18 @@ def record(bq, rows: list[dict]) -> None:
             schema=INCIDENT_SCHEMA, write_disposition="WRITE_APPEND",
             schema_update_options=[bigquery.SchemaUpdateOption.ALLOW_FIELD_ADDITION])  # adds the v5.2 columns
         bq.load_table_from_json(rows, f"{bq.project}.{INCIDENT_DS}.incidents", job_config=cfg).result()
+
+
+def record_agent_calls(bq, rows: list[dict]) -> None:
+    if rows:
+        cfg = bigquery.LoadJobConfig(schema=AGENT_CALL_SCHEMA, write_disposition="WRITE_APPEND")
+        bq.load_table_from_json(rows, f"{bq.project}.{INCIDENT_DS}.agent_calls", job_config=cfg).result()
+
+
+def record_approvals(bq, rows: list[dict]) -> None:
+    if rows:
+        cfg = bigquery.LoadJobConfig(schema=APPROVAL_SCHEMA, write_disposition="WRITE_APPEND")
+        bq.load_table_from_json(rows, f"{bq.project}.{INCIDENT_DS}.approvals", job_config=cfg).result()
 
 
 # ── 1. what did the gate see? ───────────────────────────────────────────────
@@ -255,7 +334,8 @@ def diagnose(bq, dataset: str, days: list[dt.date]) -> list[dict]:
                              qualify row_number() over (order by extracted_at desc) = 1""", ds=dataset, d=d)
         r = rec[0] if rec else None
         out.append({
-            "business_date": str(d), "diagnosis": classify(r, raw), "batch_id": got["batch_id"] or (r and r["batch_id"]),
+            "business_date": str(d), "diagnosis": classify(r, raw),
+            "batch_id": got["batch_id"] or (r and r["batch_id"]),
             "receipt_rows": r and r["row_count"], "raw_rows": raw["rows"],
             "receipt_keys": r and r["distinct_keys"], "raw_keys": raw["keys"],
             "missing_rows": (r["row_count"] - raw["rows"]) if r else None,
@@ -318,8 +398,10 @@ def findings(bq, failures: list[dict], days: list[dt.date]) -> list[dict]:
 
 
 # ── 4. evaluate: one deterministic pass ─────────────────────────────────────
-def evaluate(business_date, dry_run: bool = False, policy: dict | None = None) -> list[dict]:
-    """Returns the list of re-extract actions to run (empty when nothing to do)."""
+def evaluate(business_date, dry_run: bool = False, policy: dict | None = None,
+             fake_agent_mode: str | None = None, agent_provider: str | None = None) -> list[dict]:
+    """Returns the list of re-extract actions to run (empty when nothing to do).
+    fake_agent_mode (test project only) lets unknown incidents be sent to the fake Diagnosis agent."""
     policy = policy or load_policy()
     bd = dt.date.fromisoformat(str(business_date))
     days = [bd - dt.timedelta(days=i) for i in range(LOOKBACK_DAYS - 1, -1, -1)]
@@ -332,7 +414,7 @@ def evaluate(business_date, dry_run: bool = False, policy: dict | None = None) -
     current = findings(bq, failures, days)
     checks_ran = not any(f["type"] == "checks_incomplete" for f in current)
     existing = open_incidents(bq, days) if not dry_run else {}
-    actor, rows, actions = service_account(ENGINE), [], []
+    actor, rows, actions, cards, calls = service_account(ENGINE), [], [], [], []
 
     def row(inc_id, f, status, attempt, decision, note):
         return {"incident_id": inc_id, "incident_key": f["key"], "business_date": str(f["date"]),
@@ -369,6 +451,23 @@ def evaluate(business_date, dry_run: bool = False, policy: dict | None = None) -
         inc_id = inc["incident_id"] if inc else f"INC-{f['date']:%Y%m%d}-{uuid.uuid4().hex[:6]}"
         attempts = attempts_so_far(bq, inc_id) if inc and not dry_run else 0
         d = gates(f, policy, checks_ran, attempts)
+        agent = None
+        if d["rule_id"] == UNKNOWN_RULE and checks_ran and not (
+                inc and inc["status"] in ("ESCALATED", "AWAITING_APPROVAL", "RECOMMENDED")):
+            from reconcile_ingest import agent_gateway
+            provider, why = agent_gateway.agents_allowed(policy, fake_agent_mode, agent_provider)  # A1
+            if provider:
+                ev = f["evidence"] if isinstance(f["evidence"], dict) else {}
+                names = [f["type"]] + [str(ev[k]) for k in ("check", "model") if ev.get(k)]
+                agent = agent_gateway.consult(
+                    incident={"id": inc_id, "key": f["key"], "type": f["type"], "dataset": f["dataset"],
+                              "business_date": str(f["date"])},
+                    evidence=ev, check_names=names, policy=policy, provider=provider, mode=fake_agent_mode,
+                    attempts=attempts, implemented=IMPLEMENTED_ACTIONS, actor=actor, gate_run=gate_run)
+                d = agent["decision"]
+                calls.append(agent["call"])
+            else:
+                d["trace"][4]["answer"] += f" · {why}"
         if d["mode"] == "auto":
             status, attempt, note = "ACTING", attempts + 1, f"re-extract {f['dataset']} {f['date']}"
             actions.append({"incident_id": inc_id, "incident_key": f["key"], "dataset": f["dataset"],
@@ -376,6 +475,15 @@ def evaluate(business_date, dry_run: bool = False, policy: dict | None = None) -
                             "attempt": attempt, "gate_run_id": gate_run, "action": d["action"],
                             "rule_id": d["rule_id"], "severity": d["severity"], "route": d["route"],
                             "policy_version": policy["version"]})
+        elif d["mode"] == "approve":
+            if inc and inc["status"] in ("AWAITING_APPROVAL", "ESCALATED"):
+                print(f"  {inc['status']} {inc_id}  {f['key']} (waiting for a person; no new card)")
+                continue
+            card = approval_request(bq, inc_id, f, d, attempts + 1, gate_run, policy, actor, agent=agent)
+            cards.append(card)
+            status, attempt = "AWAITING_APPROVAL", attempts
+            note = (f"approval {card['approval_id']} sent to the data owner "
+                    f"(expires {card['expires_at'][:16].replace('T', ' ')} UTC)")
         elif d["mode"] == "recommend":
             status, attempt, note = "RECOMMENDED", attempts, f"would run {d['action']}; kill switch is on"
         else:
@@ -390,6 +498,8 @@ def evaluate(business_date, dry_run: bool = False, policy: dict | None = None) -
     if not current and not existing:
         print("  nothing to do — every check passed")
     if not dry_run:
+        record_agent_calls(bq, calls)  # provenance first: every call is on record, whatever happened next
+        record_approvals(bq, cards)    # the card exists before the incident points at it
         record(bq, rows)
     return actions
 
@@ -434,7 +544,7 @@ def reextract(actions: list[dict]) -> list[dict]:
             "incident_id": a["incident_id"], "incident_key": a["incident_key"],
             "business_date": a["business_date"], "dataset": a["dataset"],
             "failure_type": a["incident_key"].split(":")[0], "status": "ACTING",
-            "attempt": a["attempt"], "action": a["action"], "mode": "auto",
+            "attempt": a["attempt"], "action": a["action"], "mode": a.get("mode", "auto"),
             "evidence": json.dumps(after, default=str), "gates": None, "note": note,
             "gate_run_id": a.get("gate_run_id"), "actor": service_account(ENGINE), "at": _now(),
             "policy_version": a.get("policy_version"), "rule_id": a.get("rule_id"),
@@ -444,6 +554,234 @@ def reextract(actions: list[dict]) -> list[dict]:
     if not all(r["ok"] for r in results):
         raise RuntimeError("re-extract did not restore the data; the incident stays open")
     return results
+
+
+# ── 6. approvals (Phase 5 stage 1): engine-written cards, a person decides ──
+WHAT_HAPPENED = {
+    "missing_receipt": "The batch now in raw has no source receipt (control totals), so nobody can tell whether "
+                       "it is complete. Re-extracting the day from the source writes a new batch together with "
+                       "its receipt, and dbt then reconciles it.",
+    "partial_extract": "Raw holds fewer rows than the source receipt says were extracted.",
+    "missing_load": "The source receipt exists but nothing landed in raw for the day.",
+    "offsetting_errors": "Row count matches the receipt but distinct keys do not.",
+    "amount_mismatch": "Row count matches the receipt but the amount total does not.",
+}
+EVIDENCE_KEYS = ("batch_id", "diagnosis", "raw_rows", "receipt_rows", "raw_keys", "receipt_keys",
+                 "missing_rows", "missing_keys")
+
+
+def fingerprint(incident_id: str, action: str, params: dict, evidence: dict, policy_version: str) -> str:
+    """What the approver agrees to. Any change to these facts makes an old approval useless."""
+    blob = json.dumps({"incident_id": incident_id, "action": action, "params": params,
+                       "evidence": {k: evidence.get(k) for k in EVIDENCE_KEYS},
+                       "policy_version": policy_version}, sort_keys=True, default=str)
+    return hashlib.sha256(blob.encode()).hexdigest()[:16]
+
+
+def _held_marts(bq, day) -> list[str]:
+    try:
+        rows = _q(bq, f"""select dataset, state from `{bq.project}.{STATE_DS}.publication_state`
+                          where business_date = @d
+                          qualify row_number() over (partition by dataset order by decided_at desc) = 1""",
+                  d=dt.date.fromisoformat(str(day)))
+    except Exception:  # noqa: BLE001 — the card still shows the evidence without the impact line
+        return []
+    return sorted(r["dataset"] for r in rows if r["state"] in ("HELD", "ROLLED_BACK"))
+
+
+def approval_request(bq, incident_id: str, f: dict, d: dict, attempt: int, gate_run: str | None,
+                     policy: dict, actor: str, agent: dict | None = None) -> dict:
+    """Build the approval card. Every fact on it comes from the engine, never from the requester."""
+    cap = int(policy["limits"]["attempt_cap"])
+    minutes = int((policy.get("approvals") or {}).get("expiry_minutes", 120))
+    now = dt.datetime.now(dt.timezone.utc)
+    params = {"dataset": f["dataset"], "business_date": str(f["date"]), "dag_id": SOURCE_DAG[f["dataset"]]}
+    ev = f["evidence"] if isinstance(f["evidence"], dict) else {}
+    if not all(k in ev for k in ("batch_id", "raw_rows")):
+        # not a receipt diagnosis (e.g. an agent proposal for a check failure): fingerprint the raw batch
+        # vs its receipt, exactly what recheck() re-reads before acting
+        ev = diagnose(bq, f["dataset"], [dt.date.fromisoformat(str(f["date"]))])[0]
+    held = _held_marts(bq, f["date"])
+    card = {
+        "title": f"Re-extract {f['dataset']} for {f['date']} from the source",
+        "what_happened": WHAT_HAPPENED.get(f["type"], f"Diagnosis: {f['type']}"),
+        "evidence": {k: ev.get(k) for k in EVIDENCE_KEYS},
+        "rule": f"{d['stage']} · {d['rule_id']} → {d['action']} · route {d['route']} · {d['severity']}",
+        "impact": (f"Publication for {f['date']} is held for: {', '.join(held)}." if held else
+                   f"Publication for {f['date']} stays held until the data is verified."),
+        "if_approved": f"The engine re-checks the facts, re-extracts {f['dataset']} {f['date']} with the normal "
+                       "ingest code (as sa-ingest), then dbt_build rebuilds, re-tests and the gate decides.",
+        "if_rejected": "Nothing runs. The incident is escalated; publication stays held until a person fixes it.",
+        "guardrails": [f"attempt {attempt} of {cap}",
+                       f"expires after {minutes} minutes if nobody answers",
+                       f"policy {policy['version']}; a policy change voids this card",
+                       "evidence is re-read before acting; any change voids this card",
+                       "kill switch is re-checked before acting"],
+    }
+    if agent:
+        p = agent["proposal"]
+        card["what_happened"] = (f"No rule explains this {f['type']} incident. The Diagnosis agent "
+                                 f"({agent['call']['provider']}, {agent['call']['prompt_version']}) proposes this "
+                                 f"action with confidence {p['confidence']:.2f}. Facts it cited: "
+                                 + " ".join(p["facts"]))[:900]
+        card["rule"] = (f"agent proposal · call {agent['call']['call_id']} → {d['action']} · route L2 · "
+                        f"{d['severity']} (agent proposals always need a data owner)")
+        card["guardrails"].insert(0, "proposed by an AI agent: validated by the engine (catalog, scope, "
+                                     "evidence refs, confidence); it cannot act")
+    fp = fingerprint(incident_id, d["action"], params, ev, policy["version"])
+    return {
+        "approval_id": f"APR-{f['date']:%Y%m%d}-{uuid.uuid4().hex[:6]}", "incident_id": incident_id,
+        "incident_key": f["key"], "business_date": str(f["date"]), "dataset": f["dataset"],
+        "action": d["action"], "params": json.dumps(params), "status": "PENDING", "fingerprint": fp,
+        "policy_version": policy["version"], "rule_id": d["rule_id"], "severity": d["severity"],
+        "route": d["route"], "attempt": attempt, "card": json.dumps(card, default=str), "gate_run_id": gate_run,
+        "requested_by": actor, "requested_at": now.isoformat(),
+        "expires_at": (now + dt.timedelta(minutes=minutes)).isoformat(),
+        "decided_by": None, "decision_reason": None, "note": "waiting for the data owner", "at": now.isoformat(),
+    }
+
+
+def _latest_approvals(bq) -> list[dict]:
+    from google.api_core.exceptions import NotFound
+    try:
+        return _q(bq, f"""select * from `{bq.project}.{INCIDENT_DS}.approvals`
+                          qualify row_number() over (partition by approval_id order by `at` desc) = 1
+                          order by requested_at desc""")
+    except NotFound:
+        return []
+
+
+def _decisions(bq, ids: list[str]) -> dict[str, dict]:
+    """First decision per approval wins (the console refuses a second one anyway)."""
+    from google.api_core.exceptions import NotFound
+    if not ids:
+        return {}
+    try:
+        rows = _q(bq, f"""select * from `{bq.project}.{INCIDENT_DS}.{DECISIONS_TABLE}`
+                          where approval_id in unnest(@ids)
+                          qualify row_number() over (partition by approval_id order by decided_at) = 1""",
+                  ids=ids)
+    except NotFound:  # Terraform has not created the table yet → nobody can have decided
+        return {}
+    return {r["approval_id"]: r for r in rows}
+
+
+def _latest_incident(bq, incident_id: str) -> dict | None:
+    rows = _q(bq, f"""select * from `{bq.project}.{INCIDENT_DS}.incidents` where incident_id = @i
+                      qualify row_number() over (order by `at` desc) = 1""", i=incident_id)
+    return rows[0] if rows else None
+
+
+def recheck(bq, apr: dict, dec: dict, policy: dict) -> list[str]:
+    """A3: everything that must still be true at the moment of acting. Empty list = safe to act."""
+    problems = []
+    who = (dec.get("decided_by") or "").strip().lower()
+    if not who or who.endswith(".gserviceaccount.com") or who == (apr.get("requested_by") or "").lower():
+        problems.append("approver must be a named person, not the requester, a service account or an agent")
+    if dec["decided_at"] > apr["expires_at"]:
+        problems.append("decision arrived after the card expired")
+    if dec.get("fingerprint") != apr["fingerprint"]:
+        problems.append("the approver saw a different card (fingerprint mismatch)")
+    if policy["version"] != apr["policy_version"]:
+        problems.append(f"policy changed since the card was written ({apr['policy_version']} → {policy['version']})")
+    if policy["kill_switch"]:
+        problems.append("kill switch is ON in policy.yml")
+    attempts = attempts_so_far(bq, apr["incident_id"])
+    cap = int(policy["limits"]["attempt_cap"])
+    if attempts >= cap:
+        problems.append(f"attempt limit reached ({attempts} of {cap})")
+    kind = apr["incident_key"].split(":")[0]
+    if not str(apr.get("rule_id") or "").startswith("agent:"):   # agent proposals are not routed by a rule
+        d = gates({"type": kind}, policy, checks_ran=True, attempts=attempts)
+        if d["mode"] not in ("approve", "recommend") or d["action"] != apr["action"]:
+            problems.append(f"the policy no longer routes {kind} to an approved {apr['action']}")
+    elif apr["action"] not in IMPLEMENTED_ACTIONS:
+        problems.append(f"{apr['action']} is not implemented in the executor")
+    fresh = diagnose(bq, apr["dataset"], [dt.date.fromisoformat(str(apr["business_date"]))])[0]
+    params = json.loads(apr["params"])
+    if fingerprint(apr["incident_id"], apr["action"], params, fresh, apr["policy_version"]) != apr["fingerprint"]:
+        problems.append(f"the evidence changed since the card was written (now: {fresh['diagnosis']}, "
+                        f"batch {fresh['batch_id']})")
+    return problems
+
+
+def process_approvals(pretend_later_minutes: int = 0, policy: dict | None = None) -> list[dict]:
+    """Expire, reject, void or execute approval cards. Returns re-extract actions for approved cards."""
+    policy = policy or load_policy()
+    bq = client_as(ENGINE)
+    ensure_table(bq)
+    now = dt.datetime.now(dt.timezone.utc) + dt.timedelta(minutes=pretend_later_minutes)
+    pending = [a for a in _latest_approvals(bq) if a["status"] == "PENDING"]
+    print(f"Approval worker · {len(pending)} pending card(s) · policy {policy['version']}"
+          + (f" · pretending it is {pretend_later_minutes} min later (expiry only)" if pretend_later_minutes else ""))
+    decisions = _decisions(bq, [a["approval_id"] for a in pending])
+    actor, cards, incs, actions = service_account(ENGINE), [], [], []
+
+    def card_row(a, status, note, dec=None):
+        return {**{k: a[k] for k in (f.name for f in APPROVAL_SCHEMA) if k in a},
+                "business_date": str(a["business_date"]), "requested_at": a["requested_at"].isoformat(),
+                "expires_at": a["expires_at"].isoformat(), "status": status, "note": note, "at": _now(),
+                "decided_by": dec and dec.get("decided_by"), "decision_reason": dec and dec.get("reason")}
+
+    def inc_row(a, inc, status, attempt, mode, note):
+        return {"incident_id": a["incident_id"], "incident_key": a["incident_key"],
+                "business_date": str(a["business_date"]), "dataset": a["dataset"],
+                "failure_type": a["incident_key"].split(":")[0], "status": status, "attempt": attempt,
+                "action": a["action"], "mode": mode, "evidence": inc.get("evidence"), "gates": None,
+                "note": note, "gate_run_id": a["gate_run_id"], "actor": actor, "at": _now(),
+                "policy_version": a["policy_version"], "rule_id": a["rule_id"], "severity": a["severity"],
+                "route": a["route"]}
+
+    for a in pending:
+        inc = _latest_incident(bq, a["incident_id"]) or {}
+        dec = decisions.get(a["approval_id"])
+        aid = a["approval_id"]
+        if inc.get("status") != "AWAITING_APPROVAL":
+            cards.append(card_row(a, "CANCELLED", f"incident is now {inc.get('status') or 'missing'}; card closed"))
+            print(f"  CANCELLED {aid}  incident {a['incident_id']} is {inc.get('status')}")
+        elif dec is None:
+            if now >= a["expires_at"]:
+                cards.append(card_row(a, "EXPIRED", "nobody answered in time"))
+                incs.append(inc_row(a, inc, "ESCALATED", inc.get("attempt") or 0, "escalate",
+                                    f"approval {aid} expired unanswered; publication stays held"))
+                print(f"  EXPIRED   {aid}  → incident {a['incident_id']} ESCALATED")
+            else:
+                left = round((a["expires_at"] - now).total_seconds() / 60)
+                print(f"  PENDING   {aid}  {a['incident_key']}  ({left} min left)")
+        elif dec["decision"] == "REJECT":
+            cards.append(card_row(a, "REJECTED", "rejected by the data owner", dec))
+            incs.append(inc_row(a, inc, "ESCALATED", inc.get("attempt") or 0, "escalate",
+                                f"rejected by {dec['decided_by']}: {dec.get('reason') or '-'}"))
+            print(f"  REJECTED  {aid}  by {dec['decided_by']} → incident {a['incident_id']} ESCALATED")
+        else:
+            problems = recheck(bq, a, dec, policy)
+            if problems:
+                cards.append(card_row(a, "STALE", "approved, but re-check failed: " + "; ".join(problems), dec))
+                incs.append(inc_row(a, inc, "ESCALATED", inc.get("attempt") or 0, "escalate",
+                                    f"approval {aid} not executed: " + "; ".join(problems)))
+                print(f"  STALE     {aid}  " + "; ".join(problems))
+                continue
+            p = json.loads(a["params"])
+            cards.append(card_row(a, "APPROVED", "re-check passed; executing", dec))
+            incs.append(inc_row(a, inc, "ACTING", a["attempt"], "approve",
+                                f"approved by {dec['decided_by']} ({aid}); re-extract {p['dataset']} "
+                                f"{p['business_date']}"))
+            actions.append({"incident_id": a["incident_id"], "incident_key": a["incident_key"],
+                            "dataset": p["dataset"], "business_date": p["business_date"], "dag_id": p["dag_id"],
+                            "attempt": a["attempt"], "gate_run_id": a["gate_run_id"], "action": a["action"],
+                            "rule_id": a["rule_id"], "severity": a["severity"], "route": a["route"],
+                            "policy_version": a["policy_version"], "mode": "approve", "approval_id": aid})
+            print(f"  APPROVED  {aid}  by {dec['decided_by']} → re-extract {p['dataset']} {p['business_date']}")
+    record_approvals(bq, cards)
+    record(bq, incs)
+    return actions
+
+
+def list_approvals() -> None:
+    bq = client_as(ENGINE)
+    for a in _latest_approvals(bq)[:30]:
+        print(f"{a['approval_id']}  {a['status']:9} {a['incident_id']}  {a['dataset']:12} {a['business_date']}  "
+              f"{a['action']}  policy {a['policy_version']}  by {a['decided_by'] or '-'}  {a['note'] or ''}")
 
 
 def status() -> None:
@@ -480,14 +818,22 @@ def main() -> None:
     e = sub.add_parser("evaluate")
     e.add_argument("--date", required=True)
     e.add_argument("--dry-run", action="store_true")
+    e.add_argument("--fake-agent", choices=None, default=None,
+                   help="test project only: send unknown incidents to the fake Diagnosis agent in this mode")
+    e.add_argument("--agent-provider", choices=["vertex"], default=None,
+                   help="ask the real agent (only if policy allows: confirmation, or synthetic trial in test)")
     d = sub.add_parser("diagnose")
     d.add_argument("--dataset", required=True)
     d.add_argument("--date", required=True)
     sub.add_parser("status")
     sub.add_parser("policy")
+    sub.add_parser("approvals")
+    pa = sub.add_parser("process-approvals")
+    pa.add_argument("--pretend-later-minutes", type=int, default=0,
+                    help="demo only: expire cards as if this many minutes had passed (cannot approve anything)")
     a = ap.parse_args()
     if a.cmd == "evaluate":
-        evaluate(a.date, a.dry_run)
+        evaluate(a.date, a.dry_run, fake_agent_mode=a.fake_agent, agent_provider=a.agent_provider)
     elif a.cmd == "diagnose":
         bd = dt.date.fromisoformat(a.date)
         days = [bd - dt.timedelta(days=i) for i in range(LOOKBACK_DAYS - 1, -1, -1)]
@@ -495,6 +841,14 @@ def main() -> None:
             print(r)
     elif a.cmd == "status":
         status()
+    elif a.cmd == "approvals":
+        list_approvals()
+    elif a.cmd == "process-approvals":
+        acts = process_approvals(a.pretend_later_minutes)
+        if acts:  # same as the approval_worker DAG, except the rebuild is triggered by hand
+            reextract(acts)
+            print("re-extract done — now rebuild and re-verify: airflow dags trigger dbt_build "
+                  f"--conf '{{\"business_date\": \"{max(x['business_date'] for x in acts)}\"}}'")
     else:
         show_policy()
 

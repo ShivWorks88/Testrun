@@ -45,3 +45,12 @@ select
     status = 'reversed' as is_reversed
 from ranked
 where _rn = 1
+{%- if inject('staging_duplicates') %}
+-- failure suite (test only): a release breaks the dedupe, 3 claims of the business date appear twice
+union all
+(select * except (_rn), status = 'reversed' as is_reversed
+ from ranked
+ where _rn = 1 and business_date = date('{{ bd }}')
+ order by claim_id
+ limit 3)
+{%- endif %}

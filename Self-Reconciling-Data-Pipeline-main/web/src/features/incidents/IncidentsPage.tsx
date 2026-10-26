@@ -4,7 +4,8 @@ import { useIncident, useIncidents, type IncidentEvent } from "../../api/recover
 import { ErrorBox, Loading, PageHead, Panel, StatusPill, fmt, type Tone } from "../../components/ui";
 
 export const incidentTone = (s: string): Tone =>
-  s === "RESOLVED" ? "ok" : s === "ACTING" ? "info" : s === "ESCALATED" ? "crit" : s === "RECOMMENDED" ? "held" : "pend";
+  s === "RESOLVED" ? "ok" : s === "ACTING" ? "info" : s === "ESCALATED" ? "crit"
+    : s === "RECOMMENDED" || s === "AWAITING_APPROVAL" ? "held" : "pend";
 const KILL = "Rules, attempt cap and kill switch come from policy/policy.yml (version and kill switch shown in the left rail). Kill switch ON = recommend only.";
 
 export function IncidentsPage() {
@@ -94,6 +95,9 @@ export function IncidentDetailPage() {
                 <dt>Severity · route</dt><dd>{decision?.severity ?? d.summary.severity ?? "—"} · {decision?.route ?? "—"}</dd>
                 <dt>Policy</dt><dd className="mono">{decision?.policy_version ?? d.summary.policy_version ?? "—"}</dd>
                 <dt>Latest note</dt><dd>{d.summary.note ?? "—"}</dd>
+                {d.summary.status === "AWAITING_APPROVAL" && (
+                  <><dt>Approval</dt><dd><Link to="/agents">Open the approval card</Link></dd></>
+                )}
               </dl>
             </div>
             <div className="card">

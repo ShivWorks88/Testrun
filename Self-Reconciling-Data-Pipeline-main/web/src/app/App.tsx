@@ -5,6 +5,7 @@ import SourcesPage from "../features/sources/SourcesPage";
 import ReconciliationPage from "../features/reconciliation/ReconciliationPage";
 import PublicationPage from "../features/publication/PublicationPage";
 import { IncidentDetailPage, IncidentsPage } from "../features/incidents/IncidentsPage";
+import ApprovalsPage from "../features/agents/ApprovalsPage";
 import LaterPhase from "../features/LaterPhase";
 import { useBusinessDate } from "./BusinessDate";
 import { fmt } from "../components/ui";
@@ -23,7 +24,7 @@ const NAV = [
   ] },
   { group: "Platform", items: [{ to: "/environment", label: "Environment", phase: 0 }] },
 ];
-const BUILT = new Set([0, 1, 2, 3, 4]);
+const BUILT = new Set([0, 1, 2, 3, 4, 5]); // Phase 5: stage 1 (approvals) built; agents come in stage 2
 
 function Rail() {
   const env = useEnvironment();
@@ -96,7 +97,7 @@ export default function App() {
           <Route path="/publication" element={<PublicationPage />} />
           <Route path="/incidents" element={<IncidentsPage />} />
           <Route path="/incidents/:id" element={<IncidentDetailPage />} />
-          <Route path="/agents" element={<LaterPhase phase={5} title="Agents and approvals" what="Agent proposals with cited facts, engine validation and L2 approval cards." />} />
+          <Route path="/agents" element={<ApprovalsPage />} />
           <Route path="/operations" element={<LaterPhase phase={6} title="Operations" what="Outage breaker, KPI tiles and demo scenario results." />} />
           <Route path="*" element={<Navigate to="/sources" replace />} />
         </Routes>

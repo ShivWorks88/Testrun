@@ -2,7 +2,6 @@
 from zoneinfo import ZoneInfo
 
 import pyarrow as pa
-
 from reconcile_ingest.datasets import DATASETS
 from reconcile_ingest.pipeline import _apply_injections
 

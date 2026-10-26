@@ -17,8 +17,18 @@ from ..core import gcp
 from ..core.auth import User, current_user
 from ..core.config import Settings, get_settings
 from ..deps import get_repo
-from ..schemas.recovery import (Gate, IncidentDetail, IncidentEvent, IncidentSummary, Publication,
-                                PublicationCell, PublicationEvent, ReconCheck, ReconDataset, Reconciliation)
+from ..schemas.recovery import (
+    Gate,
+    IncidentDetail,
+    IncidentEvent,
+    IncidentSummary,
+    Publication,
+    PublicationCell,
+    PublicationEvent,
+    ReconCheck,
+    Reconciliation,
+    ReconDataset,
+)
 
 router = APIRouter(tags=["recovery"])
 
@@ -34,7 +44,8 @@ def _check_name(row: dict) -> str:
 
 
 def build_reconciliation(d: date, dates: list[date], batches: list[dict], checks: list[dict]) -> Reconciliation:
-    all_checks = [ReconCheck(name=_check_name(c), resource_type=c.get("resource_type") or "", status=c.get("status") or "",
+    all_checks = [ReconCheck(name=_check_name(c), resource_type=c.get("resource_type") or "",
+                             status=c.get("status") or "",
                              failures=c.get("failures"), policy_outcome=c.get("policy_outcome"),
                              attached_to=c.get("attached_to"))
                   for c in checks if c.get("resource_type") in ("test", "operation")]

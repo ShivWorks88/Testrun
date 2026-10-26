@@ -21,6 +21,7 @@ vars:
   facility_tz: "Asia/Kolkata"
   enforce_test_count: true     # T7: a skipped test fails the run
   inject_value_truncation: false   # T6 injector, test project only
+  inject: []                   # failure-suite switches (test project only, needs ALLOW_INJECTIONS=true)
 
 on-run-end:
   - "{{ assert_expected_tests(results) }}"

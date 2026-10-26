@@ -22,4 +22,8 @@ select
     business_date                                                     as admit_business_date,
     discharge_ts is null                                              as is_open,
     round(timestamp_diff(discharge_ts, admit_ts, minute) / 60.0, 2)   as length_of_stay_hours
+{%- if inject('build_error') %}
+    -- failure suite (test only): a release ships SQL that fails at run time
+    , cast(concat('not-a-number-', cast(encounter_id as string)) as int64) as injected_build_error
+{%- endif %}
 from latest

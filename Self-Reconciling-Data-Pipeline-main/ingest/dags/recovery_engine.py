@@ -5,6 +5,10 @@ assess_and_decide (sa-engine: incidents, diagnosis, five gates)
   → rebuild_and_verify (triggers dbt_build; its gate publishes, and the next engine run closes the incident)
 
 Kill switch:  kill_switch in policy/policy.yml (mounted read-only); one switch for engine and console
+Fake agent:   test project only — `airflow variables set fake_agent_mode valid|injected|timeout|…` sends
+              unknown incidents to the fake Diagnosis agent (Phase 5 stage 2); delete the variable to stop.
+Real agent:   `airflow variables set agent_provider vertex` asks Gemini (as sa-agents) — only when policy.yml
+              allows it (Security confirmation, or synthetic_trial_ref in the test project).
 """
 from __future__ import annotations
 
@@ -13,7 +17,7 @@ import sys
 import pendulum
 from airflow.providers.standard.operators.python import PythonOperator
 from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
-from airflow.sdk import DAG, Param
+from airflow.sdk import DAG, Param, Variable
 
 try:
     from airflow.sdk.exceptions import AirflowSkipException
@@ -29,7 +33,10 @@ def _engine():
 
 
 def _decide(params, **_):
-    return _engine().evaluate(params["business_date"])  # rules, attempt cap and kill switch from policy.yml
+    mode = Variable.get("fake_agent_mode", default=None) or None   # test-only knob; unset = no agent
+    provider = Variable.get("agent_provider", default=None) or None   # "vertex" = real agent, if policy allows
+    # rules, attempt cap and kill switch come from policy.yml
+    return _engine().evaluate(params["business_date"], fake_agent_mode=mode, agent_provider=provider)
 
 
 def _act(ti, **_):
@@ -46,7 +53,7 @@ with DAG(
     catchup=False,
     max_active_runs=1,
     params={"business_date": Param("2026-10-14", type="string")},
-    tags=["reconcile", "phase4"],
+    tags=["reconcile", "phase4", "phase5"],
 ) as dag:
     decide = PythonOperator(task_id="assess_and_decide", python_callable=_decide)
     act = PythonOperator(task_id="reextract", python_callable=_act)

@@ -58,7 +58,8 @@ def build_ingest_dag(system: str):
                                    description="Business date to load (default: yesterday, facility time)"),
             "datasets": Param(names, type="array", description="Subset of datasets to load"),
             "inject": Param([], type="array",
-                            description=f"Failure injectors (test project only): {list(pipeline.INJECTIONS)}"),
+                            description="Failure injectors (test project only): "
+                                        f"{list(pipeline.INJECTIONS) + ['source_timeout']}"),
         },
         doc_md=__doc__,
     )
@@ -90,8 +91,15 @@ def build_ingest_dag(system: str):
             ctx["dataset_name"] = dataset  # labels the mapped task in the UI
             s, wh, ar = _components()
             run_id = ctx["run_id"]
+            inject = list(cfg["inject"])
+            if "source_timeout" in inject:  # failure suite: the source times out once, Airflow retries
+                inject.remove("source_timeout")
+                if not s.allow_injections:
+                    raise PermissionError("failure injection is disabled (ALLOW_INJECTIONS=true in test only)")
+                if ctx["ti"].try_number == 1:
+                    raise TimeoutError(f"simulated source timeout for {dataset} (attempt 1; Airflow will retry)")
             res = pipeline.ingest_dataset(s, wh, ar, dataset, date.fromisoformat(cfg["business_date"]),
-                                          cfg["inject"], run_id=run_id)
+                                          inject, run_id=run_id)
             return res.as_dict()
 
         @task

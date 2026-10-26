@@ -45,6 +45,7 @@ services:
       GOOGLE_CLOUD_PROJECT: ${GCP_PROJECT}
       GOOGLE_APPLICATION_CREDENTIALS: /home/airflow/.config/gcloud/application_default_credentials.json
       POLICY_FILE: /opt/reconcile/policy/policy.yml   # the recovery engine reads rules and the kill switch here
+      AGENT_REGISTRY: /opt/reconcile/agents/registry.yml   # pinned agent model, region and prompt versions
     ports:
       - "8080:8080"
     volumes:
@@ -52,6 +53,7 @@ services:
       - ./data-gen:/opt/reconcile/data-gen
       - ./dbt:/opt/reconcile/dbt
       - ./policy:/opt/reconcile/policy:ro
+      - ./agents:/opt/reconcile/agents:ro
       - ${GCLOUD_CONFIG_DIR:-${HOME}/.config/gcloud}:/home/airflow/.config/gcloud:ro
 
 volumes:

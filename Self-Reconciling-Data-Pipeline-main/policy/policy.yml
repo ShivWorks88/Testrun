@@ -2,7 +2,7 @@
 # Read by the decision engine (Phase 4). Validated in CI by scripts/check_policy.py.
 # Every decision records `version`; change this file only through a reviewed pull request.
 
-version: "1.7.0-poc.1"
+version: "1.7.0-poc.3"   # poc.3: real Diagnosis agent trial (synthetic data only, recommend-only)
 
 # Kill switch: when true, every automatic action becomes a recommendation for a human.
 kill_switch: false
@@ -20,6 +20,18 @@ agents:
   residency_confirmed: false     # written confirmation: India processing, BAA coverage, no training on prompts
   min_confidence: 0.80           # proposals below this are rejected and escalated
   timeout_seconds: 20            # on timeout the incident escalates as unknown; the run never waits
+  # Synthetic-data trial of the real agent (Gemini, asia-south1) BEFORE the Security confirmation.
+  # Honoured only in the test project (ALLOW_INJECTIONS=true) and only when the Airflow variable
+  # agent_provider=vertex is set. Empty = no trial. Never a substitute for residency_confirmed.
+  synthetic_trial_ref: "POC-SYNTHETIC-ONLY: owner-approved 2026-10-26 (Bhavna); synthetic data"
+  recommend_only: true           # real-agent proposals become recommendations; nothing runs, not even after approval
+
+# ------------------------------------------------------------------ approvals (Phase 5 stage 1)
+# Route L2 rules wait for a person. The engine creates the approval; the data owner decides in the console.
+approvals:
+  expiry_minutes: 120            # unanswered → EXPIRED → escalated; publication stays held
+  owners:                        # who may approve, per dataset ("*" = any dataset)
+    "*": []                      # empty = anyone with the data_owner role in the console (POC)
 
 # ------------------------------------------------------------------ test outcomes
 # Each dbt test carries meta.policy_outcome; the publication gate reads that, not dbt severity.
@@ -72,8 +84,8 @@ rules:
       severity: P2
     - id: control_totals_missing
       when: { control_totals_present: false }
-      action: hold_publish
-      route: L2
+      action: reextract_from_raw     # poc.2: was hold_publish; the data owner must approve first
+      route: L2                      # L2 = approval required (Phase 5 stage 1)
       severity: P2
     - id: outage_breaker_open
       when: { breaker_open: true }
@@ -132,3 +144,4 @@ rules:
       action: escalate
       route: L2
       severity: P2
+

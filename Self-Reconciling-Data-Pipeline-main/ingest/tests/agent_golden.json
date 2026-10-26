@@ -1,0 +1,345 @@
+[
+ {
+  "name": "staging_mismatch-claims-valid",
+  "incident": {
+   "type": "staging_mismatch",
+   "dataset": "claims",
+   "business_date": "2026-10-14"
+  },
+  "mode": "valid",
+  "validation": "accepted",
+  "reason": null,
+  "outcome": "approve"
+ },
+ {
+  "name": "staging_mismatch-claims-escalate",
+  "incident": {
+   "type": "staging_mismatch",
+   "dataset": "claims",
+   "business_date": "2026-10-14"
+  },
+  "mode": "escalate",
+  "validation": "accepted",
+  "reason": null,
+  "outcome": "escalate"
+ },
+ {
+  "name": "staging_mismatch-claims-malformed",
+  "incident": {
+   "type": "staging_mismatch",
+   "dataset": "claims",
+   "business_date": "2026-10-14"
+  },
+  "mode": "malformed",
+  "validation": "rejected",
+  "reason": "not_json",
+  "outcome": "escalate"
+ },
+ {
+  "name": "staging_mismatch-claims-out_of_catalog",
+  "incident": {
+   "type": "staging_mismatch",
+   "dataset": "claims",
+   "business_date": "2026-10-14"
+  },
+  "mode": "out_of_catalog",
+  "validation": "rejected",
+  "reason": "action_not_allowed",
+  "outcome": "escalate"
+ },
+ {
+  "name": "staging_mismatch-claims-missing_evidence",
+  "incident": {
+   "type": "staging_mismatch",
+   "dataset": "claims",
+   "business_date": "2026-10-14"
+  },
+  "mode": "missing_evidence",
+  "validation": "rejected",
+  "reason": "unknown_evidence_ref",
+  "outcome": "escalate"
+ },
+ {
+  "name": "staging_mismatch-claims-injected",
+  "incident": {
+   "type": "staging_mismatch",
+   "dataset": "claims",
+   "business_date": "2026-10-14"
+  },
+  "mode": "injected",
+  "validation": "rejected",
+  "reason": "never_auto",
+  "outcome": "escalate"
+ },
+ {
+  "name": "staging_mismatch-claims-out_of_scope",
+  "incident": {
+   "type": "staging_mismatch",
+   "dataset": "claims",
+   "business_date": "2026-10-14"
+  },
+  "mode": "out_of_scope",
+  "validation": "rejected",
+  "reason": "out_of_scope",
+  "outcome": "escalate"
+ },
+ {
+  "name": "staging_mismatch-claims-low_confidence",
+  "incident": {
+   "type": "staging_mismatch",
+   "dataset": "claims",
+   "business_date": "2026-10-14"
+  },
+  "mode": "low_confidence",
+  "validation": "rejected",
+  "reason": "low_confidence",
+  "outcome": "escalate"
+ },
+ {
+  "name": "check_failed-encounters-valid",
+  "incident": {
+   "type": "check_failed",
+   "dataset": "encounters",
+   "business_date": "2026-10-13"
+  },
+  "mode": "valid",
+  "validation": "accepted",
+  "reason": null,
+  "outcome": "approve"
+ },
+ {
+  "name": "check_failed-encounters-escalate",
+  "incident": {
+   "type": "check_failed",
+   "dataset": "encounters",
+   "business_date": "2026-10-13"
+  },
+  "mode": "escalate",
+  "validation": "accepted",
+  "reason": null,
+  "outcome": "escalate"
+ },
+ {
+  "name": "check_failed-encounters-malformed",
+  "incident": {
+   "type": "check_failed",
+   "dataset": "encounters",
+   "business_date": "2026-10-13"
+  },
+  "mode": "malformed",
+  "validation": "rejected",
+  "reason": "not_json",
+  "outcome": "escalate"
+ },
+ {
+  "name": "check_failed-encounters-out_of_catalog",
+  "incident": {
+   "type": "check_failed",
+   "dataset": "encounters",
+   "business_date": "2026-10-13"
+  },
+  "mode": "out_of_catalog",
+  "validation": "rejected",
+  "reason": "action_not_allowed",
+  "outcome": "escalate"
+ },
+ {
+  "name": "check_failed-encounters-missing_evidence",
+  "incident": {
+   "type": "check_failed",
+   "dataset": "encounters",
+   "business_date": "2026-10-13"
+  },
+  "mode": "missing_evidence",
+  "validation": "rejected",
+  "reason": "unknown_evidence_ref",
+  "outcome": "escalate"
+ },
+ {
+  "name": "check_failed-encounters-injected",
+  "incident": {
+   "type": "check_failed",
+   "dataset": "encounters",
+   "business_date": "2026-10-13"
+  },
+  "mode": "injected",
+  "validation": "rejected",
+  "reason": "never_auto",
+  "outcome": "escalate"
+ },
+ {
+  "name": "check_failed-encounters-out_of_scope",
+  "incident": {
+   "type": "check_failed",
+   "dataset": "encounters",
+   "business_date": "2026-10-13"
+  },
+  "mode": "out_of_scope",
+  "validation": "rejected",
+  "reason": "out_of_scope",
+  "outcome": "escalate"
+ },
+ {
+  "name": "check_failed-encounters-low_confidence",
+  "incident": {
+   "type": "check_failed",
+   "dataset": "encounters",
+   "business_date": "2026-10-13"
+  },
+  "mode": "low_confidence",
+  "validation": "rejected",
+  "reason": "low_confidence",
+  "outcome": "escalate"
+ },
+ {
+  "name": "staging_mismatch-lab_results-valid",
+  "incident": {
+   "type": "staging_mismatch",
+   "dataset": "lab_results",
+   "business_date": "2026-10-12"
+  },
+  "mode": "valid",
+  "validation": "accepted",
+  "reason": null,
+  "outcome": "approve"
+ },
+ {
+  "name": "staging_mismatch-lab_results-escalate",
+  "incident": {
+   "type": "staging_mismatch",
+   "dataset": "lab_results",
+   "business_date": "2026-10-12"
+  },
+  "mode": "escalate",
+  "validation": "accepted",
+  "reason": null,
+  "outcome": "escalate"
+ },
+ {
+  "name": "staging_mismatch-lab_results-malformed",
+  "incident": {
+   "type": "staging_mismatch",
+   "dataset": "lab_results",
+   "business_date": "2026-10-12"
+  },
+  "mode": "malformed",
+  "validation": "rejected",
+  "reason": "not_json",
+  "outcome": "escalate"
+ },
+ {
+  "name": "staging_mismatch-lab_results-out_of_catalog",
+  "incident": {
+   "type": "staging_mismatch",
+   "dataset": "lab_results",
+   "business_date": "2026-10-12"
+  },
+  "mode": "out_of_catalog",
+  "validation": "rejected",
+  "reason": "action_not_allowed",
+  "outcome": "escalate"
+ },
+ {
+  "name": "staging_mismatch-lab_results-missing_evidence",
+  "incident": {
+   "type": "staging_mismatch",
+   "dataset": "lab_results",
+   "business_date": "2026-10-12"
+  },
+  "mode": "missing_evidence",
+  "validation": "rejected",
+  "reason": "unknown_evidence_ref",
+  "outcome": "escalate"
+ },
+ {
+  "name": "staging_mismatch-lab_results-injected",
+  "incident": {
+   "type": "staging_mismatch",
+   "dataset": "lab_results",
+   "business_date": "2026-10-12"
+  },
+  "mode": "injected",
+  "validation": "rejected",
+  "reason": "never_auto",
+  "outcome": "escalate"
+ },
+ {
+  "name": "staging_mismatch-lab_results-out_of_scope",
+  "incident": {
+   "type": "staging_mismatch",
+   "dataset": "lab_results",
+   "business_date": "2026-10-12"
+  },
+  "mode": "out_of_scope",
+  "validation": "rejected",
+  "reason": "out_of_scope",
+  "outcome": "escalate"
+ },
+ {
+  "name": "staging_mismatch-lab_results-low_confidence",
+  "incident": {
+   "type": "staging_mismatch",
+   "dataset": "lab_results",
+   "business_date": "2026-10-12"
+  },
+  "mode": "low_confidence",
+  "validation": "rejected",
+  "reason": "low_confidence",
+  "outcome": "escalate"
+ },
+ {
+  "name": "no-dataset-valid-becomes-escalate",
+  "incident": {
+   "type": "build_error",
+   "dataset": null,
+   "business_date": "2026-10-14"
+  },
+  "mode": "valid",
+  "validation": "accepted",
+  "reason": null,
+  "outcome": "escalate"
+ },
+ {
+  "name": "kill-switch-valid-recommend",
+  "mode": "valid",
+  "kill_switch": true,
+  "validation": "accepted",
+  "reason": null,
+  "outcome": "recommend"
+ },
+ {
+  "name": "kill-switch-injected-still-rejected",
+  "mode": "injected",
+  "kill_switch": true,
+  "validation": "rejected",
+  "reason": "never_auto",
+  "outcome": "escalate"
+ },
+ {
+  "name": "attempt-cap-valid-escalate",
+  "mode": "valid",
+  "attempts": 2,
+  "validation": "accepted",
+  "reason": null,
+  "outcome": "escalate"
+ },
+ {
+  "name": "attempt-1-valid-approve",
+  "mode": "valid",
+  "attempts": 1,
+  "validation": "accepted",
+  "reason": null,
+  "outcome": "approve"
+ },
+ {
+  "name": "out-of-scope-on-claims-2026-10-10",
+  "incident": {
+   "dataset": "claims",
+   "business_date": "2026-10-10"
+  },
+  "mode": "out_of_scope",
+  "validation": "rejected",
+  "reason": "out_of_scope",
+  "outcome": "escalate"
+ }
+]

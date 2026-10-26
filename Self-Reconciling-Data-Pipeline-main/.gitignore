@@ -33,3 +33,5 @@ web/*.tsbuildinfo
 
 # os
 .DS_Store
+logs/
+failure_suite_*.log

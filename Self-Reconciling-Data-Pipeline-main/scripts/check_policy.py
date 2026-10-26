@@ -8,9 +8,12 @@ Fails when:
   * the last ordinary rule is not the fallback (when: {any: true})
   * rule ids repeat, severities or routes are unknown
   * agents are enabled while residency is not confirmed
+  * an agent pins a model that Google has retired, or whose `model_retires` date has passed
+  * an agent's region is not an allowed single region (India residency: no global / us / eu)
 """
 from __future__ import annotations
 
+import datetime as dt
 import re
 import sys
 from pathlib import Path
@@ -20,9 +23,14 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 ROUTES = {"auto", "L2", "L3"}
 SEVERITIES = {"P1", "P2", "P3"}
+ALLOWED_AGENT_REGIONS = {"asia-south1"}          # data residency: Mumbai only; never global / us / eu
+# Models Google has retired on Vertex AI (date it stopped answering). A pinned model here fails CI.
+RETIRED_MODELS = {"gemini-2.5-pro": "2026-10-20", "gemini-2.5-flash": "2026-10-20",
+                  "gemini-2.5-flash-lite": "2026-10-20"}
 
 
-def check(policy: dict, registry: dict) -> list[str]:
+def check(policy: dict, registry: dict, today: dt.date | None = None) -> list[str]:
+    today = today or dt.date.today()
     errors: list[str] = []
     if not re.fullmatch(r"\d+\.\d+\.\d+(-[\w.]+)?", str(policy.get("version", ""))):
         errors.append("version must be semver, e.g. 1.7.0 or 1.7.0-poc.1")
@@ -79,6 +87,14 @@ def check(policy: dict, registry: dict) -> list[str]:
         for act in a.get("may_propose") or []:
             if act not in catalog:
                 errors.append(f"agent '{a.get('id')}' may propose unknown action '{act}'")
+        model = str(a.get("model", ""))
+        if model in RETIRED_MODELS and dt.date.fromisoformat(RETIRED_MODELS[model]) <= today:
+            errors.append(f"agent '{a.get('id')}': model {model} was retired on {RETIRED_MODELS[model]}")
+        retires = a.get("model_retires")
+        if retires and dt.date.fromisoformat(str(retires)) <= today:
+            errors.append(f"agent '{a.get('id')}': model {model} retires on {retires} — pin a newer model")
+        if a.get("region") not in ALLOWED_AGENT_REGIONS:
+            errors.append(f"agent '{a.get('id')}': region must be one of {sorted(ALLOWED_AGENT_REGIONS)}")
     return errors
 
 
@@ -98,3 +114,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+

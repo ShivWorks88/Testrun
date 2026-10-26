@@ -177,10 +177,162 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/approvals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Approvals */
+        get: operations["approvals_api_approvals_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/approvals/{approval_id}/decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Decide */
+        post: operations["decide_api_approvals__approval_id__decision_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** Approval */
+        Approval: {
+            /** Approval Id */
+            approval_id: string;
+            /** Incident Id */
+            incident_id: string;
+            /**
+             * Business Date
+             * Format: date
+             */
+            business_date: string;
+            /** Dataset */
+            dataset: string | null;
+            /** Action */
+            action: string;
+            /** Params */
+            params: {
+                [key: string]: unknown;
+            };
+            /**
+             * Status
+             * @description PENDING | APPROVED | REJECTED | EXPIRED | STALE | CANCELLED
+             */
+            status: string;
+            /**
+             * Shown Status
+             * @description status, or DECIDED while the worker has not picked the decision up
+             */
+            shown_status: string;
+            /** Fingerprint */
+            fingerprint: string;
+            /** Policy Version */
+            policy_version: string | null;
+            /** Rule Id */
+            rule_id: string | null;
+            /** Severity */
+            severity: string | null;
+            /** Route */
+            route: string | null;
+            /** Attempt */
+            attempt: number | null;
+            card: components["schemas"]["ApprovalCard"];
+            /** Requested By */
+            requested_by: string | null;
+            /**
+             * Requested At
+             * Format: date-time
+             */
+            requested_at: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /** Note */
+            note: string | null;
+            /** Decided By */
+            decided_by?: string | null;
+            decision?: components["schemas"]["Decision"] | null;
+            /**
+             * Can Decide
+             * @description this user may approve or reject this card now
+             */
+            can_decide: boolean;
+            /**
+             * Why Not
+             * @description why this user cannot decide, when can_decide is false
+             */
+            why_not?: string | null;
+        };
+        /**
+         * ApprovalCard
+         * @description Facts written by the engine. The console shows them; nobody types them.
+         */
+        ApprovalCard: {
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+            /**
+             * What Happened
+             * @default
+             */
+            what_happened: string;
+            /**
+             * Evidence
+             * @default {}
+             */
+            evidence: {
+                [key: string]: unknown;
+            };
+            /**
+             * Rule
+             * @default
+             */
+            rule: string;
+            /**
+             * Impact
+             * @default
+             */
+            impact: string;
+            /**
+             * If Approved
+             * @default
+             */
+            if_approved: string;
+            /**
+             * If Rejected
+             * @default
+             */
+            if_rejected: string;
+            /**
+             * Guardrails
+             * @default []
+             */
+            guardrails: string[];
+        };
         /** Batch */
         Batch: {
             /** Batch Id */
@@ -246,6 +398,60 @@ export interface components {
             ok: boolean;
             /** Detail */
             detail: string;
+        };
+        /** Decision */
+        Decision: {
+            /**
+             * Decision
+             * @enum {string}
+             */
+            decision: "APPROVE" | "REJECT";
+            /** Decided By */
+            decided_by: string;
+            /**
+             * Decided At
+             * Format: date-time
+             */
+            decided_at: string;
+            /** Reason */
+            reason?: string | null;
+        };
+        /** DecisionAccepted */
+        DecisionAccepted: {
+            /** Approval Id */
+            approval_id: string;
+            /**
+             * Decision
+             * @enum {string}
+             */
+            decision: "APPROVE" | "REJECT";
+            /** Decided By */
+            decided_by: string;
+            /**
+             * Decided At
+             * Format: date-time
+             */
+            decided_at: string;
+            /** Next */
+            next: string;
+        };
+        /** DecisionIn */
+        DecisionIn: {
+            /**
+             * Decision
+             * @enum {string}
+             */
+            decision: "APPROVE" | "REJECT";
+            /**
+             * Fingerprint
+             * @description fingerprint of the card the person is looking at
+             */
+            fingerprint: string;
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
         };
         /** Environment */
         Environment: {
@@ -917,6 +1123,61 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["IncidentDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approvals_api_approvals_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Approval"][];
+                };
+            };
+        };
+    };
+    decide_api_approvals__approval_id__decision_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                approval_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DecisionIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DecisionAccepted"];
                 };
             };
             /** @description Validation Error */
