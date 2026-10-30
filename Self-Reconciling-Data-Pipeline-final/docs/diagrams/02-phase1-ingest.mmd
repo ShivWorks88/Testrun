@@ -1,0 +1,8 @@
+flowchart LR
+  T["Airflow DAG<br/>ingest_ehr / ingest_lis / ingest_billing"] --> P["① Probe source<br/>lag, reachability → ops.source_health"]
+  P --> X["② Extract rows AND receipt<br/>one repeatable-read snapshot<br/>rows · distinct IDs · null amounts · ₹ total"]
+  X --> A[("③ Archive<br/>Parquet + manifest + SHA-256<br/>write-once in GCS")]
+  A --> L["④ Load in ONE BigQuery transaction<br/>delete the day → insert → write receipt → log batch"]
+  L --> R[("raw.&lt;table&gt;<br/>ops.control_totals · ops.batches")]
+  R --> N["⑤ Hand over to dbt_build"]
+  RP["replay_batch DAG"] -. "⑥ replay any day<br/>from the archive" .-> L

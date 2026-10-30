@@ -1,0 +1,27 @@
+sequenceDiagram
+  autonumber
+  participant E as Decision engine
+  participant GW as Agent gateway
+  participant MA as Model Armor
+  participant AD as Diagnosis agent (ADK, Cloud Run)
+  participant C as Communication agent
+  participant S as Slack / console
+  participant O as Data owner
+  participant W as approval_worker
+  E->>GW: fallback_unknown incident
+  GW->>GW: masked payload (counts + check names only)
+  GW->>MA: screen untrusted text
+  MA-->>GW: clean (else reject → escalate)
+  GW->>AD: payload, ID token
+  AD-->>GW: JSON proposal + confidence + evidence refs
+  GW->>MA: screen the answer
+  GW->>GW: validate (catalog, never-auto, scope, ≥ 0.80, 20 s)
+  GW->>E: accepted proposal → same five gates
+  E->>C: card facts
+  C-->>E: plain-words summary (no new numbers / IDs)
+  E->>S: approval card (L2)
+  O->>S: Approve / Reject
+  S->>W: decision row
+  W->>W: re-check fingerprint, state, policy, kill switch, cap
+  W->>E: run the fix → dbt_build → RESOLVED
+  E->>S: card rewritten + thread reply with outcome

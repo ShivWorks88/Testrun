@@ -1,0 +1,22 @@
+# Slack app manifest — api.slack.com/apps → Create New App → From an app manifest → paste this.
+# Replace REQUEST_URL with the callback URL printed by scripts/deploy_slack_callback.sh (…/slack/interactions).
+display_information:
+  name: Reconcile Approvals
+  description: Approval cards from the self-reconciling data pipeline (synthetic POC data)
+features:
+  bot_user:
+    display_name: reconcile-approvals
+    always_online: false
+oauth_config:
+  scopes:
+    bot:
+      - chat:write          # post and update approval cards
+      - users:read          # who clicked
+      - users:read.email    # their e-mail, checked against the approver list
+settings:
+  interactivity:
+    is_enabled: true
+    request_url: REQUEST_URL
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false

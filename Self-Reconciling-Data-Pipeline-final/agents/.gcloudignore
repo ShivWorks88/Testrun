@@ -1,0 +1,9 @@
+# only the Dockerfile, requirements and the agent package go into the build
+*
+!Dockerfile
+!requirements.txt
+!reconcile_agents/
+!reconcile_agents/**
+**/__pycache__/
+!reconcile_assistant/
+!reconcile_assistant/**

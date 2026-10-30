@@ -1,0 +1,232 @@
+# Recovery policy, POC subset of 1.7.0.
+# Read by the decision engine (Phase 4). Validated in CI by scripts/check_policy.py.
+# Every decision records `version`; change this file only through a reviewed pull request.
+
+version: "1.8.0-poc.5"   # Phase 6 pkgs 3+4: source drift (archive, late changes, look-back), orphans, MPI remaps
+                         # (poc.4: Phase 6 pkg 2 — value-level results in gate and engine; release context)
+                         # (poc.3: Phase 5 stage 4 — approval cards and outage alerts in Slack)
+                         # (poc.2: Model Armor screening, Communication agent, ADK provider — stage 3b)
+                         # (poc.1: Phase 6 pkg 1 — outage breaker, stale feed, late documentation)
+                         # (poc.3 of 1.7.0: real Diagnosis agent trial, synthetic data only, recommend-only)
+
+# Kill switch: when true, every automatic action becomes a recommendation for a human.
+kill_switch: false
+
+timezone: Asia/Kolkata
+
+limits:
+  attempt_cap: 2                 # automatic actions per incident
+  l1_budget_minutes: 30          # auto-fix must be verified within this, or escalate to L2
+  lock_lease_seconds: 900        # partition lock lease for the executor
+
+# ------------------------------------------------------------------ AI agents
+agents:
+  enabled: false                 # stays false until residency_confirmed is true (Phase 0 AI track)
+  residency_confirmed: false     # written confirmation: India processing, BAA coverage, no training on prompts
+  min_confidence: 0.80           # proposals below this are rejected and escalated
+  timeout_seconds: 20            # on timeout the incident escalates as unknown; the run never waits
+  # Synthetic-data trial of the real agent (Gemini, asia-south1) BEFORE the Security confirmation.
+  # Honoured only in the test project (ALLOW_INJECTIONS=true) and only when the Airflow variable
+  # agent_provider=vertex is set. Empty = no trial. Never a substitute for residency_confirmed.
+  synthetic_trial_ref: "POC-SYNTHETIC-ONLY: owner-approved 2026-10-26 (Bhavna); synthetic data"
+  recommend_only: true           # real-agent proposals become recommendations; nothing runs, not even after approval
+  # Every real-agent call (vertex or adk) is screened by Model Armor in asia-south1 (India jurisdiction):
+  # the untrusted log/check text before the call, the answer after it. required: a screening error = reject.
+  model_armor:
+    template: reconcile-agents
+    location: asia-south1
+    required: true
+
+# ------------------------------------------------------------------ approvals (Phase 5 stage 1)
+# Route L2 rules wait for a person. The engine creates the approval; the data owner decides in the console.
+approvals:
+  expiry_minutes: 120            # unanswered → EXPIRED → escalated; publication stays held
+  owners:                        # who may approve, per dataset ("*" = any dataset)
+    "*": []                      # empty = anyone with the data_owner role in the console (POC)
+
+# ------------------------------------------------------------------ source checks (Phase 6 pkgs 3+4)
+# Compare what we loaded with what the source says NOW (read-only, earlier days only) and find orphans.
+detectors:
+  source_drift:
+    enabled: true
+    window_days: 7               # earlier days compared with the source on every run
+    datasets: [encounters, claims]
+  orphans:
+    enabled: true
+    young_hours: 2               # a result in the last 2 h of the day may wait for its parent (next day)
+  merged_patients:
+    enabled: true                # rows on MPI-retired IDs → approval card → remap (staging only)
+
+# ------------------------------------------------------------------ releases (Phase 6 pkg 2)
+# A grain/model test that fails on a model a release changed within this window → suspected_regression:
+# report held, incident to an engineer with the release attached, no data action (T14).
+releases:
+  window_days: 7
+
+# ------------------------------------------------------------------ notifications (Phase 5 stage 4)
+# Approval cards and outage alerts go to ONE Slack channel. A click there writes the same decision row as
+# the console; the approval worker re-checks everything before acting. Off until the app is installed.
+notifications:
+  slack:
+    enabled: true
+    channel_id: "C0CCJTB1CBE"                # e.g. C0123ABCDEF (#all-reconcile-approvals → channel details)
+    token_secret: slack-bot-token # Secret Manager; sa-engine may read this one secret
+
+# ------------------------------------------------------------------ test outcomes
+# Each dbt test carries meta.policy_outcome; the publication gate reads that, not dbt severity.
+policy_outcomes:
+  - informational
+  - warning
+  - blocking_unless_explained
+  - blocking
+  - threshold
+
+# ------------------------------------------------------------------ action catalog
+# The only actions the executor may ever run. Agents may only propose these.
+actions:
+  reextract_from_raw:   { mode: auto,     reversible: true,  scope: window,    description: "Replay a window from the source or archive, then rebuild and re-verify" }
+  rebuild_partition:    { mode: auto,     reversible: true,  scope: partition, description: "insert_overwrite the affected business date in audit" }
+  link_unknown_member:  { mode: auto,     reversible: true,  scope: rows,      description: "Point young orphans at the unknown member; re-link next run" }
+  quarantine_rows:      { mode: approve,  reversible: true,  scope: rows,      description: "Move rows from marts to quarantine (moved, never copied)" }
+  remap_merged_patient: { mode: approve,  reversible: true,  scope: rows,      description: "Remap a retired patient ID to its surviving ID (data owner approves)" }
+  wait_and_recheck:     { mode: auto,     reversible: true,  scope: dataset,   description: "Hold and re-check on the next run (late data)" }
+  log_expected:         { mode: auto,     reversible: true,  scope: none,      description: "Record an expected difference; no data change" }
+  hold_publish:         { mode: auto,     reversible: true,  scope: dataset,   description: "Keep the last verified day in analytics, flagged delayed" }
+  escalate:             { mode: auto,     reversible: true,  scope: none,      description: "Hand over to L2/L3 with evidence" }
+
+never_auto:                      # can never be chosen automatically, by a rule or an agent
+  - full_refresh
+  - rollback
+  - source_delete
+
+# ------------------------------------------------------------------ severity
+severity:
+  P1: "Critical published data wrong or missing, or wide blast radius"
+  P2: "Important data delayed or partly wrong; last verified day still available"
+  P3: "Low impact, caught before publication"
+
+# ------------------------------------------------------------------ outage breaker (Phase 6)
+# One breaker per source system (EHR, LIS, BILLING). `default` applies to every source; a source may
+# override it by name. While a breaker is OPEN: one parent incident, its datasets and every report built
+# from them are HELD, no per-dataset fix runs, pending approval cards are cancelled. It closes only when
+# BOTH the source probe passes AND every dataset of the source has loaded again (freshness).
+breakers:
+  default:
+    open_when: { failing_datasets: 3, or_share_of_inventory: 0.5, within_minutes: 30 }
+    close_when: [source_probe_passes, freshness_passes]
+  global_open_at_sources: 2      # 2 sources down at once = probably our side: hold ALL publishing
+
+# ------------------------------------------------------------------ freshness (Phase 6)
+freshness:
+  max_replica_lag_hours: 6       # source replica further behind than this = stale feed
+  min_volume_share: 0.5          # a day's rows below this share of the recent median = late data
+  volume_baseline_days: 14       # median of the latest load per day over this many earlier days
+
+# ------------------------------------------------------------------ rules
+# Stage 1 safety overrides run first, stage 2 ordinary rules (first match wins), stage 3 the gate.
+# The last ordinary rule must be the fallback (match: any).
+rules:
+  safety_overrides:
+    - id: outage_breaker_open          # first: while a source is down nothing else about it is trusted
+      when: { breaker_open: true }
+      action: hold_publish
+      route: L2
+      severity: P1
+    - id: checks_did_not_run
+      when: { expected_tests_missing: true }
+      action: hold_publish
+      route: L3
+      severity: P2
+    - id: control_totals_missing
+      when: { control_totals_present: false }
+      action: reextract_from_raw     # poc.2: was hold_publish; the data owner must approve first
+      route: L2                      # L2 = approval required (Phase 5 stage 1)
+      severity: P2
+
+  ordinary:
+    - id: extract_failed               # one dataset failed after Airflow's retries (no outage)
+      when: { failure: extract_failed }
+      action: escalate
+      route: L2
+      severity: P2
+    - id: stale_feed                   # source replica is behind: wait for it to catch up
+      when: { failure: stale_feed }
+      action: wait_and_recheck
+      route: auto
+      severity: P2
+    - id: late_documentation           # the source has only part of the day yet
+      when: { failure: low_volume }
+      action: wait_and_recheck
+      route: auto
+      severity: P3
+    - id: late_change                  # the source changed a day we loaded (inside the dbt look-back window)
+      when: { failure: changed_after_load }
+      action: rebuild_partition
+      route: auto
+      severity: P2
+    - id: change_beyond_lookback       # same, older than the look-back window → rebuild THAT day
+      when: { failure: changed_after_load_beyond_lookback }
+      action: rebuild_partition
+      route: auto
+      severity: P2
+    - id: archived_parent              # the parent encounter is in the EHR archive index → expected
+      when: { failure: relationship, parent_archived: true }
+      action: log_expected
+      route: auto
+      severity: P3
+    - id: true_orphan                  # the parent exists nowhere → a person looks
+      when: { failure: relationship_unknown_parent }
+      action: escalate
+      route: L2
+      severity: P2
+    - id: archived_history
+      when: { failure: count_excess, all_rows_before_archive_cutoff: true }
+      action: log_expected
+      route: auto
+      severity: P3
+    - id: partial_extract
+      when: { failure: count_gap, gap_within_single_window: true }
+      action: reextract_from_raw
+      route: auto
+      severity: P2
+    - id: duplicate_batch
+      when: { failure: raw_duplicates }
+      action: rebuild_partition
+      route: auto
+      severity: P3
+    - id: offsetting_errors
+      when: { failure: distinct_keys_or_amount_mismatch, count_matches: true }
+      action: reextract_from_raw
+      route: auto
+      severity: P2
+    - id: young_orphan
+      when: { failure: relationship, max_orphan_age_hours: 2 }
+      action: link_unknown_member
+      route: auto
+      severity: P3
+    - id: merged_patient_orphan
+      when: { failure: relationship, parent_in_mpi_merges: true }
+      action: remap_merged_patient
+      route: L2
+      severity: P2
+    - id: unit_change
+      when: { failure: value_range_or_anomaly }
+      action: hold_publish
+      route: L3
+      severity: P2
+    - id: value_corruption
+      when: { failure: value_level_mismatch }
+      action: hold_publish
+      route: L3
+      severity: P2
+    - id: suspected_regression
+      when: { failure: grain_or_model_test, recent_release_touched_scope: true }
+      action: hold_publish
+      route: L3
+      severity: P2
+    - id: fallback_unknown
+      when: { any: true }
+      action: escalate
+      route: L2
+      severity: P2
+

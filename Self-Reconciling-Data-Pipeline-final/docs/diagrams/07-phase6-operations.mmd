@@ -1,0 +1,18 @@
+flowchart LR
+  subgraph SIG["Signals"]
+    PR["① Source probes<br/>+ freshness"]
+    DR["② Source drift check<br/>earlier days vs live source"]
+    OR["③ Orphan classifier<br/>young · archived · true · merged"]
+    RL["④ Release log<br/>ops.releases"]
+  end
+  PR --> BR{"⑤ Outage breaker<br/>3 datasets or 50% of a source"}
+  BR -- "open" --> ONE["One parent incident<br/>source held, others publish"]
+  DR --> ENG["⑥ Decision engine"]
+  OR --> ENG
+  RL --> ENG
+  ONE --> ENG
+  ENG --> J[("recovery journal")]
+  J --> OPS["⑦ Operations screen<br/>KPIs, trust grid, incidents"]
+  J --> ST["⑧ Pipeline story<br/>replay a real incident"]
+  J --> AS["⑨ Ask the pipeline<br/>read-only assistant"]
+  HC["⑩ Hardening pass<br/>hardening_check.sh · phi_scan"] -.-> J

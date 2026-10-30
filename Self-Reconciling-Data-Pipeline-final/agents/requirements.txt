@@ -1,0 +1,3 @@
+# Cloud Run image for the Diagnosis agent (stage 3b). Pin the exact version after the first local test:
+#   pip install -r agents/requirements.txt && pip freeze | grep -i google-adk
+google-adk>=1.10,<2

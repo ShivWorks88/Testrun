@@ -1,0 +1,40 @@
+version: 2
+
+models:
+  - name: dim_encounters
+    description: "One row per encounter, latest version."
+    columns:
+      - name: encounter_id
+        data_tests:
+          - not_null
+          - unique
+
+  - name: fct_daily_claims
+    description: "Claims per business date, payer and encounter type (gross, reversed, net ₹)."
+    columns:
+      - name: claim_day_key
+        data_tests:
+          - not_null
+          - unique
+      - name: business_date
+        data_tests:
+          - not_null
+
+  - name: fct_bed_occupancy
+    description: "Inpatient admissions, discharges and midnight occupancy per ward and day."
+    columns:
+      - name: occupancy_key
+        data_tests:
+          - not_null
+          - unique
+
+  - name: fct_lab_results_daily
+    description: "Lab results per business date and test: count, abnormal count, average (Phase 6 pkg 2)."
+    columns:
+      - name: lab_day_key
+        data_tests:
+          - not_null
+          - unique
+      - name: business_date
+        data_tests:
+          - not_null

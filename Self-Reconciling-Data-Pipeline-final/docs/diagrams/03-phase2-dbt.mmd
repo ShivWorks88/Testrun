@@ -1,0 +1,13 @@
+flowchart TB
+  R[("raw + ops receipts")] --> S["① Staging models<br/>incremental · de-duplicated · 3-day look-back"]
+  S --> M["② Marts in audit<br/>dim_encounters · fct_daily_claims · fct_bed_occupancy · fct_lab_results_daily"]
+  subgraph CHK["Checks on every build"]
+    direction LR
+    RC["③ Reconcile to receipt<br/>count · distinct keys · nulls · ₹ total"]
+    Q["④ Quality tests<br/>duplicates · relationships · glucose unit + range"]
+    V["⑤ Value-level check<br/>sa-valuerecon · KMS deterministic encryption"]
+  end
+  M --> CHK
+  V --> E[("evidence_restricted<br/>keys + field names, never values")]
+  CHK --> C["⑥ Expected-test-count assertion<br/>a skipped test counts as a failure"]
+  C --> RR["⑦ run_results.json + meta.policy_outcome<br/>→ publication gate"]

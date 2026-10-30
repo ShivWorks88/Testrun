@@ -1,0 +1,37 @@
+flowchart LR
+  subgraph SRC["Sources · synthetic"]
+    EHR["EHR<br/>encounters, patients"]
+    LIS["LIS<br/>lab orders, results"]
+    BIL["Billing<br/>claims, payments"]
+    MPI["MPI<br/>patient merges"]
+  end
+  subgraph DATA["Data path"]
+    ING["① Airflow ingest<br/>rows + receipt, one snapshot"]
+    ARC[("② Archive<br/>GCS write-once")]
+    RAW[("③ BigQuery raw<br/>+ ops receipts")]
+    DBT["④ dbt build + checks<br/>audit dataset"]
+    GATE{{"⑤ Publication gate"}}
+    ANA[("⑥ analytics<br/>reports read this")]
+  end
+  subgraph CTRL["Control loop"]
+    ENG["⑦ Decision engine<br/>five gates"]
+    BRK["Outage breaker"]
+    AG["AI agents<br/>advise only"]
+    SL["Data owner<br/>Slack approval"]
+  end
+  CON["Console<br/>Operations, Pipeline story, assistant"]
+  EHR & LIS & BIL & MPI --> ING
+  ING --> ARC --> RAW
+  ING --> RAW
+  RAW --> DBT --> GATE
+  GATE -- "verified" --> ANA
+  GATE -- "failed checks" --> ENG
+  BRK -. "hold a source" .-> GATE
+  BRK --> ENG
+  AG -. "proposal" .-> ENG
+  SL -- "approve / reject" --> ENG
+  ENG -- "⑧ fix: re-extract / rebuild" --> DBT
+  ENG -- "re-extract" --> ING
+  CON -. "reads only" .-> ENG
+  classDef gate fill:#e3f0fb,stroke:#2b6cb0,stroke-width:2px;
+  class GATE gate;

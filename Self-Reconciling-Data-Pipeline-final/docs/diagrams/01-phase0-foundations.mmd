@@ -1,0 +1,15 @@
+flowchart TB
+  OP["Operator laptop<br/>gcloud login (ADC, no key files)"] -->|"① make tf-init · tf-plan"| TF["Terraform<br/>infra/*.tf"]
+  TF -->|"② make tf-apply"| GCP
+  subgraph GCP["Google Cloud project · asia-south1"]
+    direction LR
+    IAM["③ Service accounts<br/>one per component"]
+    BQ[("④ BigQuery datasets<br/>raw · audit · analytics · ops …")]
+    GCS[("⑤ Archive bucket<br/>7-day retention")]
+    NET["⑥ VPC + private<br/>Cloud SQL"]
+    SEC["⑦ KMS · Secret<br/>Manager"]
+    AR["⑧ Artifact Registry<br/>· Cloud Run"]
+  end
+  GCP -->|"⑨ make env"| ENV[".env from Terraform outputs"]
+  ENV --> GEN["⑩ make up · make generate<br/>Airflow + synthetic sources"]
+  ENV --> CON["⑪ make deploy-console<br/>Environment screen"]

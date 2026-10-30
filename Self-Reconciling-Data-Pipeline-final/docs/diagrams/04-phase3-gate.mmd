@@ -1,0 +1,10 @@
+flowchart TB
+  RR["run_results + value checks<br/>+ manifest dependencies"] --> D{"① Every blocking check<br/>on the report and its<br/>upstreams passed?"}
+  D -- "no" --> H["②a HELD<br/>report keeps last verified day,<br/>marked delayed"]
+  D -- "yes" --> B{"②b Any outage<br/>breaker open?<br/>(re-read before each copy)"}
+  B -- "yes" --> H
+  B -- "no" --> K["③ Backup current analytics partition"]
+  K --> C["④ Copy audit partition → analytics<br/>as sa-publish (only identity allowed)"]
+  C --> P[("⑤ PUBLISHED<br/>publication.publication_state")]
+  H --> EN["→ decision engine"]
+  P -. "rollback if needed" .-> K

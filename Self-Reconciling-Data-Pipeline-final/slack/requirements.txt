@@ -1,0 +1,5 @@
+# reconcile-slack-callback (Phase 5 stage 4) — pin exact versions after the first build if you like
+fastapi>=0.110,<1
+uvicorn[standard]>=0.29,<1
+google-cloud-bigquery>=3.20,<4
+requests>=2.31,<3

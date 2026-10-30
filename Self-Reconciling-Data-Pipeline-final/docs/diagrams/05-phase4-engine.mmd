@@ -1,0 +1,21 @@
+flowchart TB
+  F["Failed or held day<br/>(start_recovery task)"] --> I["① Open incident<br/>dataset · date · failure type"]
+  I --> G1{"② Gate 1<br/>checks ran?"}
+  G1 -- "no" --> L3["Hold · L3"]
+  G1 -- "yes" --> G2{"③ Gate 2<br/>trustworthy?<br/>breaker closed, fresh"}
+  G2 -- "no" --> W["WAITING or one<br/>outage incident"]
+  G2 -- "yes" --> G3{"④ Gate 3<br/>expected?"}
+  G3 -- "yes" --> EX["EXPECTED · log, publish"]
+  G3 -- "no" --> G4{"⑤ Gate 4<br/>rule matches?"}
+  G4 -- "no rule" --> AG["Ask AI agent<br/>(Phase 5)"]
+  G4 -- "yes" --> G5{"⑥ Gate 5<br/>attempt cap · kill switch<br/>never-auto list"}
+  G5 -- "auto (L1)" --> ACT["⑦ Catalog action<br/>re-extract · rebuild · link"]
+  G5 -- "approve (L2)" --> CARD["Approval card"]
+  G5 -- "engineer (L3)" --> ESC["ESCALATED with evidence"]
+  ACT --> RV["⑧ Re-run dbt + gate"]
+  RV --> OK{"⑨ Verified?"}
+  OK -- "yes" --> RES["RESOLVED"]
+  OK -- "no, attempt < 2" --> G5
+  OK -- "no, cap reached" --> ESC
+  J[("recovery.incidents<br/>journal before + after every step")]
+  ACT -.-> J
